@@ -20,7 +20,7 @@
 			<textarea id="pre" type="text" style="width:250px;height:500px;"></textarea>
 		</td>
 		<td>
-			<textarea id="pre" type="text" style="width:250px;height:500px;"></textarea>
+			<textarea id="lisp" type="text" style="width:250px;height:500px;"></textarea>
 		</td>
 		<td>
 			<textarea id="js" type="text" style="width:250px;height:500px;"></textarea>
@@ -31,13 +31,13 @@
 	</tr>
 	<tr>
 		<td>
-			<button id="transnotate" onclick="transnotate(this)">Transnotate</button>
+			<button id="transnotate" onclick="transnotate()">Transnotate</button>
 		</td>
 		<td>
-			<button id="transpile" onclick="transpile(this);">Transpile</button>
+			<button id="transpile" onclick="transpile();">Transpile</button>
 		</td>
 		<td>
-			<button id="interpret" onclick="interpret(this);">Interpret</button>
+			<button id="interpret" onclick="interpret();">Interpret</button>
 		</td>
 	</tr>
 </table>
@@ -45,14 +45,19 @@
 	</body>
 
 	<script src="lisp2js.js"></script>
+	<script src="semisweet.js"></script>
 	<script>
-		function transnotate(button) {
-
+		function transnotate() {
+			let lisp = document.getElementById("pre").value;
+			document.getElementById("lisp").value = semisweet(lisp);
+			transpile();
 		}
-		function transpile(button) {
-
+		function transpile() {
+			let lisp = document.getElementById("lisp").value;
+			document.getElementById("js").value = lisp2js(lisp);
+			interpret();
 		}
-		function interpret(button) {
+		function interpret() {
 			let txt = "";
 			function println(line) {
 				txt = txt + line + "\n";
