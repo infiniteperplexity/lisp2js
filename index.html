@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Lisp 2 JS</title>
+
+	</head>
+	<style>
+	</style>
+	<body>
+
+<table>
+	<tr>
+		<th>Preprocess</th>
+		<th>Lisp</th>
+		<th>JavaScript</th>
+		<th>Output</th>
+	</tr>
+	<tr>
+		<td>
+			<textarea id="pre" type="text" style="width:250px;height:500px;"></textarea>
+		</td>
+		<td>
+			<textarea id="pre" type="text" style="width:250px;height:500px;"></textarea>
+		</td>
+		<td>
+			<textarea id="js" type="text" style="width:250px;height:500px;"></textarea>
+		</td>
+		<td>
+			<textarea id="out" type="text" style="width:250px;height:500px;"></textarea>
+		</td>
+	</tr>
+	<tr>
+		<td>
+			<button id="transnotate" onclick="transnotate(this)">Transnotate</button>
+		</td>
+		<td>
+			<button id="transpile" onclick="transpile(this);">Transpile</button>
+		</td>
+		<td>
+			<button id="interpret" onclick="interpret(this);">Interpret</button>
+		</td>
+	</tr>
+</table>
+
+	</body>
+
+	<script src="lisp2js.js"></script>
+	<script>
+		function transnotate(button) {
+
+		}
+		function transpile(button) {
+
+		}
+		function interpret(button) {
+			let txt = "";
+			function println(line) {
+				txt = txt + line + "\n";
+				console.log(line);
+			}
+			let code = document.getElementById("js").value;
+			let result = eval(code);
+			txt = txt + String(result);
+			document.getElementById("out").value = txt;
+		}
+	</script>
+
+</html>
