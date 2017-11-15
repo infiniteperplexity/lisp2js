@@ -45,23 +45,70 @@ function lisp2js(lisp) {
 		}
 	}
 
+	function Scope(parent) {
+		// this is kind of a mess, but I like it better than types
+		this.parent = parent || window;
+		this.identifiers = {};
+		this.specials = {};
+		this.macros = {};
+		this.functions = {};
+		this.values = {};
+	}
+	let core = new Scope();
+
+	function interpret(list, scope) {
+		scope = scope || core;
+		let car = ;
+		let cdr = scope.cdr(list);
+		if (car in core.specials) {
+			return specials[car](interpret(cdr));
+		} else if (car in macros) {
+			return macros[car](interpret(cdr));
+		} else if (car in functions) {
+			return functions[car](...cdr);
+		} else if (car in values) {
+			throw new TypeError();
+			return null;
+		} else {
+			throw new ReferenceError();
+			return null;
+		}
+	}
+
 	function parse(input) {
 		return nest(tokenize(input));
 	}
 
-	function cons(a, b) {
+	core.cons = function(a, b) {
+		if (!Array.isArray(b)) {
+			throw new Error();
+		}
 		return [a].concat(b);
 	}
 
-	function car(lst) {
-		return lst[0];
+	core.car = function(lst) {
+		if (!Array.isArray(lst)  ) {
+			throw new Error();
+		} else if (lst.length===0) {
+			throw new Error();
+		} else {
+			return lst[0];
+		}
 	}
 
-	function cdr(lst) {
-		return lst.slice(1);
+	core.cdr = function(lst) {
+		if (!Array.isArray(lst)  ) {
+			throw new Error();
+		} else if (lst.length===0) {
+			throw new Error();
+		} else if (lst.length===1) {
+			return [];
+		} else {
+			return lst.slice(-1);
+		}
 	}
 
-	function eq(a, b) {
+	core.eq = function(a, b) {
 		return (a===b);
 	}
 
