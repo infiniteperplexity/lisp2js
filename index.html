@@ -11,9 +11,10 @@
 <table>
 	<tr>
 		<th>Preprocess</th>
-		<th>Lisp</th>
-		<th>JavaScript</th>
-		<th>Output</th>
+		<th>Lisp Code</th>
+		<th>JS Code</th>
+		<th>Lisp Output</th>
+		<th>JS Output</th>
 	</tr>
 	<tr>
 		<td>
@@ -26,7 +27,10 @@
 			<textarea id="js" type="text" style="width:250px;height:500px;"></textarea>
 		</td>
 		<td>
-			<textarea id="out" type="text" style="width:250px;height:500px;"></textarea>
+			<textarea id="lout" type="text" style="width:250px;height:500px;"></textarea>
+		</td>
+		<td>
+			<textarea id="jsout" type="text" style="width:250px;height:500px;"></textarea>
 		</td>
 	</tr>
 	<tr>
@@ -36,9 +40,6 @@
 		<td>
 			<button id="transpile" onclick="transpile();">Transpile</button>
 		</td>
-		<td>
-			<button id="interpret" onclick="interpret();">Interpret</button>
-		</td>
 	</tr>
 </table>
 
@@ -47,6 +48,7 @@
 	<script src="lisp2js.js"></script>
 	<script src="semisweet.js"></script>
 	<script>
+
 		function transnotate() {
 			let lisp = document.getElementById("pre").value;
 			document.getElementById("lisp").value = semisweet(lisp);
@@ -54,19 +56,20 @@
 		}
 		function transpile() {
 			let lisp = document.getElementById("lisp").value;
-			document.getElementById("js").value = lisp2js(lisp);
-			interpret();
-		}
-		function interpret() {
+			let [transpiled, interpreted] = lisp2js(lisp);
+			document.getElementById("js").value = transpiled;
 			let txt = "";
 			function println(line) {
 				txt = txt + line + "\n";
 				console.log(line);
 			}
 			let code = document.getElementById("js").value;
+			// this part doesn't really work right because of scoping issues...need to figure 
+			// that out...
 			let result = eval(code);
 			txt = txt + String(result);
-			document.getElementById("out").value = txt;
+			document.getElementById("jsout").value = txt;
+			document.getElementById("lout").value = interpreted;
 		}
 	</script>
 

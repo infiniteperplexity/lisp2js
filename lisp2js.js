@@ -9,11 +9,13 @@ function lisp2js(lisp) {
 		let trm = rpars.trim();
 		// split on whitespace
 		let splt = trm.split(/\s+/);
+		console.log("tokenized:");
+		console.log(splt);
 		return splt;
 	}
 
 
-	function nest = function(tokens, lst) {
+	function nest(tokens, lst) {
 		// begin accumulating a list
 		if (lst===undefined) {
 			return nest(tokens,[]);
@@ -25,6 +27,7 @@ function lisp2js(lisp) {
 			// open parenthesis begins a new list
 			} else if (token==="(") {
 				lst.push(nest(tokens,[]));
+				return nest(tokens, lst);
 			// closed parenthesis ends the list
 			} else if (token===")") {
 				return lst;
@@ -32,41 +35,78 @@ function lisp2js(lisp) {
 				return nest(tokens,lst.concat(atomize(token)));
 			}
 		}
-
 	}
 
 	function atomize(token) {
-		if (!isNaN(parseFloat(input))) {
-			return {type: 'literal', value: parseFloat(input)};
-		} else if (input[0]==='"' && input.slice(-1)==='"') {
-			return {type: 'literal', value: input.slice(1,-1)};
+		if (!isNaN(parseFloat(token))) {
+			return parseFloat(token);
+		} else if (token[0]==='"' && token.slice(-1)==='"') {
+			return token.slice(1,-1);
 		} else {
-			return {type: 'identifier', value: input};
+			return token;
 		}
 	}
 
-	function Scope(parent) {
-		// this is kind of a mess, but I like it better than types
-		this.parent = parent || window;
-		this.identifiers = {};
-		this.specials = {};
-		this.macros = {};
-		this.functions = {};
-		this.values = {};
+	function scope(parent) {
+		let o = {};
+		parent = parent || window;
+		if (parent===window) {
+			o.specials = {};
+			o.macros = {};
+			o.functions = {};
+			o.identifiers = {};	
+		} else {
+			o.specials = Object.create(parent.specials);
+			o.macros = Object.create(parent.macros);
+			o.functions = Object.create(parent.functions);
+			o.identifiers = Object.create(parent.identifiers);
+		}
+		return o;
 	}
-	let core = new Scope();
+	let core = scope();
 
-	function interpret(list, scope) {
-		scope = scope || core;
-		let car = ;
-		let cdr = scope.cdr(list);
-		if (car in core.specials) {
-			return specials[car](interpret(cdr));
-		} else if (car in macros) {
-			return macros[car](interpret(cdr));
-		} else if (car in functions) {
-			return functions[car](...cdr);
-		} else if (car in values) {
+	function transpile(lst, scp) {
+		console.log("interpreting...");
+		console.log(lst);
+		scp = scp || core;
+		let car = core.car(lst);
+		let cdr = core.cdr(lst);
+		if (Array.isArray(car)) {
+			// this is surely wrong.
+			return interpret(car, scp);
+		} else if (car in scp.specials) {
+			return scp[car](interpret(cdr, scp));
+		} else if (car in scp.macros) {
+			return scp[car](interpret(cdr, scp));
+		} else if (car in scp.functions) {
+			let rslt = [car,"("].concat(cdr.join("\\, \\").split("\\"),")").join("");
+			console.log(rslt);
+			return rslt;
+		} else if (car in scp.identifiers) {
+			throw new TypeError();
+			return null;
+		} else {
+			throw new ReferenceError();
+			return null;
+		}
+	}
+
+	function interpret(lst, scp) {
+		console.log("interpreting...");
+		console.log(lst);
+		scp = scp || core;
+		let car = core.car(lst);
+		let cdr = core.cdr(lst);
+		if (Array.isArray(car)) {
+			// this is surely wrong.
+			return interpret(car, scp);
+		} else if (car in scp.specials) {
+			return scp[car](interpret(cdr, scp));
+		} else if (car in scp.macros) {
+			return scp[car](interpret(cdr, scp));
+		} else if (car in scp.functions) {
+			return scp[car](...cdr);
+		} else if (car in scp.identifiers) {
 			throw new TypeError();
 			return null;
 		} else {
@@ -76,15 +116,18 @@ function lisp2js(lisp) {
 	}
 
 	function parse(input) {
-		return nest(tokenize(input));
-	}
+		let parsed = nest(tokenize(input));
+		console.log("parsed:");
+		console.log(parsed);
+		return parsed;
+	};
 
 	core.cons = function(a, b) {
 		if (!Array.isArray(b)) {
 			throw new Error();
 		}
 		return [a].concat(b);
-	}
+	};
 
 	core.car = function(lst) {
 		if (!Array.isArray(lst)  ) {
@@ -101,16 +144,57 @@ function lisp2js(lisp) {
 			throw new Error();
 		} else if (lst.length===0) {
 			throw new Error();
-		} else if (lst.length===1) {
-			return [];
 		} else {
-			return lst.slice(-1);
+			return lst.slice(1);
 		}
-	}
+	};
 
 	core.eq = function(a, b) {
 		return (a===b);
-	}
+	};
 
-	return js;
+
+	core.lambda = function([identifier, args, body]) {
+		// so...does this get added to the scope automatically?
+		return function() {
+			// I'm not sure how to get the right scope here...
+			let scp = scope(this);
+			for (let i=0; i<args.length; i++) {
+				scp[args[i]] = arguments[i];
+			}
+			return interpret(body, scp);
+		}
+	};
+	core.specials.lambda = core.lambda;
+
+	core.cond = function(clauses) {
+		for (clause in clauses) {
+			if (interpret(clause[0],this)) {
+				return interpret(clause[1],this);
+			}
+		}
+		throw new Error();
+	};
+	core.specials.cond = core.cond;
+
+	core.quote = function(lst) {
+
+	};
+	core.atom = function() {
+		// returns true for anything but a non-quoted list
+	};
+
+
+	core.add = function() {
+		let acc = 0;
+		for (let arg of arguments) {
+			acc += arg;
+		}
+		return acc;
+	};
+	core.functions.add = core.add;
+
+	let parsed = parse(lisp);
+	let results = [transpile(parsed), interpret(parsed)];
+	return results;
 }
