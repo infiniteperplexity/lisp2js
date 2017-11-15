@@ -50,19 +50,20 @@ function lisp2js(lisp) {
 	}
 
 	function cons(a, b) {
-
+		return [a].concat(b);
 	}
 
+	function car(lst) {
+		return lst[0];
+	}
 
+	function cdr(lst) {
+		return lst.slice(1);
+	}
 
-
-
-
-
-
-
+	function eq(a, b) {
+		return (a===b);
+	}
 
 	return js;
 }
-
-(defmacro unless (test body) (list 'if (list 'not test) body))
