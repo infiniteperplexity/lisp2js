@@ -2,6 +2,7 @@
 Issues:
 	- Parses strings wrong if they have spaces
 	- Parses strings wrong if they have values equal to identifiers
+	- How should we handle multi-line input?
 */
 
 let Lisp = {};
@@ -71,97 +72,74 @@ Lisp = (function(Lisp) {
 	
 	let core = context();
 
-	function transpile(lst, ctx) {
-		console.log("interpreting...");
-		console.log(lst);
-		ctx = ctx || core;
-		let head = car(lst);
-		let tail = cdr(lst);
-		if (Array.isArray(head)) {
-			// this is surely wrong.
-			return interpret(head, ctx);
-		} else if (head in ctx.specials) {
-			return ctx[head](interpret(tail, ctx));
-		} else if (head in ctx.macros) {
-			return ctx[head](interpret(tail, ctx));
-		} else if (head in ctx.functions) {
-			let rslt = [head,"("].concat(tail.join("\\, \\").split("\\"),")").join("");
-			console.log(rslt);
-			return rslt;
-		} else if (head in ctx.scope) {
-			throw new TypeError();
-			return null;
-		} else {
-			throw new ReferenceError();
-			return null;
-		}
-	}
-
-
-	function transpile(lst, ctx) {
+	function transpile(input, ctx) {
 		console.log("transpiling...");
-		console.log(lst);
+		//console.log(input);
 		ctx = ctx || core;
-		if (Array.isArray(lst)) {
-			if (lst.length===0) {
-				return lst;
+		if (Array.isArray(input)) {
+			if (input.length===0) {
+				return input;
 			}
-			let [head, ...tail] = lst; 
+			let [head, ...tail] = input;
+			// special form
 			if (head in ctx.specials) {
-				// probably wrong
+				//console.log("special form");
 				return ctx.scope[head](tail, ctx, transpile);
+			// macro identifier
 			} else if (head in ctx.macros) {
-				// probably wrong
-				return ctx.scope[head](interpret(tail, ctx));
-			} else if (head in ctx.functions) {
-				// probably correct
-				let [head, ...tail] = lst.map(function(element) {return transpile(element, ctx);});
-				let rslt = [head,"("].concat(tail.join("\\, \\").split("\\"),")").join("");
-				return rslt;
-			} else if (head in ctx.scope) {
-				// probably correct
-				throw new TypeError(head + " is not callable.");
-				return null;
+				//console.log("macro");
+				return ctx.scope[head](tail, ctx, transpile);
 			} else {
-				// probably correct
-				throw new ReferenceError(head + " does not exist in this scope.");
-				return null;
+			// process it as a list
+				let list = [head, ...tail] = input.map(function(element) {return transpile(element, ctx);});
+				return ["(",head,")("].concat(tail.join("\\, \\").split("\\"),")").join("");
 			}
 		} else {
-			// probably wrong
-			return lst;
+			return input;
 		}
 	}
 
-	function interpret(lst, ctx) {
+	function interpret(input, ctx) {
 		console.log("interpreting...");
-		console.log(lst);
+		//console.log(input);
 		ctx = ctx || core;
-		if (Array.isArray(lst)) {
-			if (lst.length===0) {
-				return lst;
+		if (Array.isArray(input)) {
+			if (input.length===0) {
+				return input;
 			}
-			let [head, ...tail] = lst; 
+			let [head, ...tail] = input;
+			// special form
 			if (head in ctx.specials) {
+				console.log("special form");
 				return ctx.scope[head](tail, ctx);
+			// macro identifier
 			} else if (head in ctx.macros) {
+				console.log("macro");
 				return ctx.scope[head](tail, ctx);
-			} else if (head in ctx.functions) {
-				let [head, ...tail] = lst.map(function(element) {return interpret(element, ctx);});
-				return head(...tail);
-			} else if (head in ctx.scope) {
-				throw new TypeError(head + " is not callable.");
-				return null;
 			} else {
-				throw new ReferenceError(head + " does not exist in this scope.");
-				return null;
+			// process it as a list
+				let list = input.map(function(element) {return interpret(element, ctx);});
+				[head, ...tail] = list;
+				if (head instanceof Function) {
+					console.log("anonymous function");
+					return head(...tail);
+				} else if (head in ctx.functions) {
+					console.log("named function");
+					return ctx.functions[head](...tail);
+				} else if  (!(Array.isArray(head)) && tail.length>0) {
+					console.log("non-standard value " + head + " at head of list");
+				} else {
+					console.log("recursing...");
+					return list;
+				}
 			}
 		} else {
-			// this will do strings wrong
-			if (ctx.scope.hasOwnProperty(lst)) {
-				return ctx.scope[lst];
+			if (ctx.scope.hasOwnProperty(input)) {
+				console.log("named value");
+				return ctx.scope[input];
 			} else {
-				return lst;
+				console.log("primitive value");
+				return input;
 			}
 		}
 	}
@@ -204,39 +182,21 @@ Lisp = (function(Lisp) {
 		return (a===b);
 	}
 
-
-	function lambda([identifier, args, body],context) {
-		// so...does this get added to the scope automatically?
-		return function() {
-			// I'm not sure how to get the right scope here...
-			let ctx = context(context);
-			for (let i=0; i<args.length; i++) {
-				ctx.scope[args[i]] = arguments[i];
-			}
-			return interpret(body, ctx);
-		}
+	function lambda([args, body], ctx, method) {
+		method = method || interpret;
+		return (method===interpret) ?
+			(function() {
+				let cont = context(ctx);
+				Array.prototype.map.call(arguments,function(_,i) {
+					cont.scope[args[i]]=arguments[i];
+				});
+				return interpret(body, cont);
+			}) :
+			`(function(${args.map(arg => transpile(arg, ctx)).join(",")}) {
+				return ${transpile(body,ctx)};})`;
 	}
 
 	function cond(clauses, ctx, method) {
-		method = method || interpret || transpile;
-		let code, head, tail, rest;
-		if (clauses.length===0) {
-			code = `new Error("You can't handle the truth!")`;
-		} else {
-			[[head, tail], ...rest] = clauses;
-			// the problem here is that inserting cond into the text requires calling it.
-			code =`(${method(head, ctx)}) ?
-					${method(tail, ctx)} :
-					${	(method===interpret) ?
-							"cond(rest, ctx, method)" :
-							cond(rest, ctx, method) }
-					;`
-			;
-		}
-		return (method===interpret) ? eval(code) : code;
-	}
-
-	function cond2(clauses, ctx, method) {
 		method = method || interpret;
 		let err = "You can't handle the truth!";
 		if (clauses.length===0) {
@@ -248,9 +208,9 @@ Lisp = (function(Lisp) {
 					interpret(tail, ctx) :
 					cond(rest, ctx, method);
 			} else {
-				return `(${transpile(head, ctx)}) ?
+				return `((${transpile(head, ctx)}) ?
 					${transpile(tail, ctx)} :
-					${cond(rest, ctx, method)};`
+					${cond(rest, ctx, method)})`
 				;
 			}
 		}
