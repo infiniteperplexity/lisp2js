@@ -48,15 +48,24 @@
 	<script src="lisp2js.js"></script>
 	<script src="semisweet.js"></script>
 	<script>
+		for (n in Lisp.core) {
+			if (window[n]===undefined) {
+				window[n] = Lisp.core[n];
+			} else {
+				alert("Warning: " + n + " already defined!");
+			}
+		}
 
 		function transnotate() {
-			let lisp = document.getElementById("pre").value;
-			document.getElementById("lisp").value = semisweet(lisp);
-			transpile();
+			// let lisp = document.getElementById("pre").value;
+			// document.getElementById("lisp").value = semisweet(lisp);
+			// transpile();
 		}
 		function transpile() {
 			let lisp = document.getElementById("lisp").value;
-			let [transpiled, interpreted] = lisp2js(lisp);
+			let parsed = Lisp.parse(lisp);
+			let interpreted = Lisp.interpret(parsed);
+			let transpiled = Lisp.transpile(parsed);
 			document.getElementById("js").value = transpiled;
 			let txt = "";
 			function println(line) {
@@ -64,8 +73,6 @@
 				console.log(line);
 			}
 			let code = document.getElementById("js").value;
-			// this part doesn't really work right because of scoping issues...need to figure 
-			// that out...
 			let result = eval(code);
 			txt = txt + String(result);
 			document.getElementById("jsout").value = txt;

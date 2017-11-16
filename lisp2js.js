@@ -1,5 +1,6 @@
-function lisp2js(lisp) {
-	let js = "";
+let Lisp = {};
+
+Lisp = (function(Lisp) {
 
 	function tokenize(input) {
 		// pad parentheses with spaces
@@ -11,9 +12,8 @@ function lisp2js(lisp) {
 		let splt = trm.split(/\s+/);
 		console.log("tokenized:");
 		console.log(splt);
-		return splt;
+		return splt;	
 	}
-
 
 	function nest(tokens, lst) {
 		// begin accumulating a list
@@ -47,42 +47,42 @@ function lisp2js(lisp) {
 		}
 	}
 
-	function scope(parent) {
-		let o = {};
-		parent = parent || window;
-		if (parent===window) {
-			o.specials = {};
-			o.macros = {};
-			o.functions = {};
-			o.identifiers = {};	
+	function context(parent) {
+		let ctx = {};
+		if (parent===undefined) {
+			ctx.specials = {};
+			ctx.macros = {};
+			ctx.functions = {};
+			ctx.scope = {};
 		} else {
-			o.specials = Object.create(parent.specials);
-			o.macros = Object.create(parent.macros);
-			o.functions = Object.create(parent.functions);
-			o.identifiers = Object.create(parent.identifiers);
+			ctx.specials = Object.create(parent.specials);
+			ctx.macros = Object.create(parent.macros);
+			ctx.functions = Object.create(parent.functions);
+			ctx.scope = Object.create(parent.scope);
 		}
-		return o;
+		return ctx;
 	}
-	let core = scope();
+	
+	let core = context();
 
-	function transpile(lst, scp) {
+	function transpile(lst, ctx) {
 		console.log("interpreting...");
 		console.log(lst);
-		scp = scp || core;
-		let car = core.car(lst);
-		let cdr = core.cdr(lst);
-		if (Array.isArray(car)) {
+		ctx = ctx || core;
+		let head = car(lst);
+		let tail = cdr(lst);
+		if (Array.isArray(head)) {
 			// this is surely wrong.
-			return interpret(car, scp);
-		} else if (car in scp.specials) {
-			return scp[car](interpret(cdr, scp));
-		} else if (car in scp.macros) {
-			return scp[car](interpret(cdr, scp));
-		} else if (car in scp.functions) {
-			let rslt = [car,"("].concat(cdr.join("\\, \\").split("\\"),")").join("");
+			return interpret(head, ctx);
+		} else if (head in ctx.specials) {
+			return ctx[head](interpret(tail, ctx));
+		} else if (head in ctx.macros) {
+			return ctx[head](interpret(tail, ctx));
+		} else if (head in ctx.functions) {
+			let rslt = [head,"("].concat(tail.join("\\, \\").split("\\"),")").join("");
 			console.log(rslt);
 			return rslt;
-		} else if (car in scp.identifiers) {
+		} else if (head in ctx.scope) {
 			throw new TypeError();
 			return null;
 		} else {
@@ -91,22 +91,22 @@ function lisp2js(lisp) {
 		}
 	}
 
-	function interpret(lst, scp) {
+	function interpret(lst, ctx) {
 		console.log("interpreting...");
 		console.log(lst);
-		scp = scp || core;
-		let car = core.car(lst);
-		let cdr = core.cdr(lst);
+		ctx = ctx || core;
+		let head = car(lst);
+		let tail = cdr(lst);
 		if (Array.isArray(car)) {
 			// this is surely wrong.
-			return interpret(car, scp);
-		} else if (car in scp.specials) {
-			return scp[car](interpret(cdr, scp));
-		} else if (car in scp.macros) {
-			return scp[car](interpret(cdr, scp));
-		} else if (car in scp.functions) {
-			return scp[car](...cdr);
-		} else if (car in scp.identifiers) {
+			return interpret(head, ctx);
+		} else if (head in ctx.specials) {
+			return ctx.scope[head](interpret(tail, ctx));
+		} else if (head in ctx.macros) {
+			return ctx.scope[head](interpret(tail, ctx));
+		} else if (head in ctx.functions) {
+			return ctx.scope[head](...tail);
+		} else if (head in ctx.scope) {
 			throw new TypeError();
 			return null;
 		} else {
@@ -122,14 +122,14 @@ function lisp2js(lisp) {
 		return parsed;
 	};
 
-	core.cons = function(a, b) {
+	function cons(a, b) {
 		if (!Array.isArray(b)) {
 			throw new Error();
 		}
 		return [a].concat(b);
-	};
+	}
 
-	core.car = function(lst) {
+	function car(lst) {
 		if (!Array.isArray(lst)  ) {
 			throw new Error();
 		} else if (lst.length===0) {
@@ -139,7 +139,7 @@ function lisp2js(lisp) {
 		}
 	}
 
-	core.cdr = function(lst) {
+	function cdr(lst) {
 		if (!Array.isArray(lst)  ) {
 			throw new Error();
 		} else if (lst.length===0) {
@@ -149,25 +149,24 @@ function lisp2js(lisp) {
 		}
 	};
 
-	core.eq = function(a, b) {
+	function eq(a, b) {
 		return (a===b);
 	};
 
 
-	core.lambda = function([identifier, args, body]) {
+	function lambda([identifier, args, body]) {
 		// so...does this get added to the scope automatically?
 		return function() {
 			// I'm not sure how to get the right scope here...
-			let scp = scope(this);
+			let ctx = context(this);
 			for (let i=0; i<args.length; i++) {
-				scp[args[i]] = arguments[i];
+				ctx.scope[args[i]] = arguments[i];
 			}
-			return interpret(body, scp);
+			return interpret(body, ctx);
 		}
 	};
-	core.specials.lambda = core.lambda;
 
-	core.cond = function(clauses) {
+	function cond(clauses) {
 		for (clause in clauses) {
 			if (interpret(clause[0],this)) {
 				return interpret(clause[1],this);
@@ -175,26 +174,36 @@ function lisp2js(lisp) {
 		}
 		throw new Error();
 	};
-	core.specials.cond = core.cond;
 
-	core.quote = function(lst) {
+	function quote(lst) {
 
 	};
-	core.atom = function() {
+	function atom() {
 		// returns true for anything but a non-quoted list
 	};
 
-
-	core.add = function() {
+	function add() {
 		let acc = 0;
 		for (let arg of arguments) {
 			acc += arg;
 		}
 		return acc;
 	};
-	core.functions.add = core.add;
+	
+	for (let func of ["cons","car","cdr","eq","cond","lambda","atom","quote","add"]) {
+		eval("core.scope['" + func + "'] = " + func + ";");
+	}
+	for (let func of ["cons","car","cdr","eq","add"]) {
+		eval("core.functions['" + func + "'] = " + func + ";");
+	}
 
-	let parsed = parse(lisp);
-	let results = [transpile(parsed), interpret(parsed)];
-	return results;
-}
+	Lisp.core = core.scope;
+	console.log("Lisp core:");
+	console.log(core);
+	Lisp.tokenize = tokenize;
+	Lisp.nest = nest; 
+	Lisp.parse = parse;
+	Lisp.interpret = interpret;
+	Lisp.transpile = transpile;
+	return Lisp;
+})(Lisp);
