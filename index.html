@@ -64,19 +64,28 @@
 		function transpile() {
 			let lisp = document.getElementById("lisp").value;
 			let parsed = Lisp.parse(lisp);
-			let interpreted = Lisp.interpret(parsed);
-			let transpiled = Lisp.transpile(parsed);
-			document.getElementById("js").value = transpiled;
-			let txt = "";
-			function println(line) {
-				txt = txt + line + "\n";
-				console.log(line);
+			let rslts = "";
+			let f = function() {
+				rslts = rslts + arguments[0] + "\n";
 			}
-			let code = document.getElementById("js").value;
-			let result = eval(code);
-			txt = txt + String(result);
-			document.getElementById("jsout").value = txt;
-			document.getElementById("lout").value = interpreted;
+			Lisp.bindOutput(f);
+			let interpreted = Lisp.interpret(parsed);
+			rslts = rslts + interpreted;
+			document.getElementById("lout").value = rslts;
+			let TRANSPILE = false;
+			if (TRANSPILE) {
+				let transpiled = Lisp.transpile(parsed);
+				document.getElementById("js").value = transpiled;
+				let txt = "";
+				function println(line) {
+					txt = txt + line + "\n";
+					console.log(line);
+				}
+				let code = document.getElementById("js").value;
+				let result = eval(code);
+				txt = txt + String(result);
+				document.getElementById("jsout").value = txt;
+			}	
 		}
 	</script>
 

@@ -1,3 +1,9 @@
+/*
+Issues:
+	- Parses strings wrong if they have spaces
+	- Parses strings wrong if they have values equal to identifiers
+*/
+
 let Lisp = {};
 
 Lisp = (function(Lisp) {
@@ -91,27 +97,72 @@ Lisp = (function(Lisp) {
 		}
 	}
 
+
+	function transpile(lst, ctx) {
+		console.log("transpiling...");
+		console.log(lst);
+		ctx = ctx || core;
+		if (Array.isArray(lst)) {
+			if (lst.length===0) {
+				return lst;
+			}
+			let [head, ...tail] = lst; 
+			if (head in ctx.specials) {
+				// probably wrong
+				return ctx.scope[head](interpret(tail, ctx));
+			} else if (head in ctx.macros) {
+				// probably wrong
+				return ctx.scope[head](interpret(tail, ctx));
+			} else if (head in ctx.functions) {
+				// probably correct
+				let [head, ...tail] = lst.map(function(element) {return transpile(element, ctx);});
+				let rslt = [head,"("].concat(tail.join("\\, \\").split("\\"),")").join("");
+				return rslt;
+			} else if (head in ctx.scope) {
+				// probably correct
+				throw new TypeError(head + " is not callable.");
+				return null;
+			} else {
+				// probably correct
+				throw new ReferenceError(head + " does not exist in this scope.");
+				return null;
+			}
+		} else {
+			// probably wrong
+			return lst;
+		}
+	}
+
 	function interpret(lst, ctx) {
 		console.log("interpreting...");
 		console.log(lst);
 		ctx = ctx || core;
-		let head = car(lst);
-		let tail = cdr(lst);
-		if (Array.isArray(car)) {
-			// this is surely wrong.
-			return interpret(head, ctx);
-		} else if (head in ctx.specials) {
-			return ctx.scope[head](interpret(tail, ctx));
-		} else if (head in ctx.macros) {
-			return ctx.scope[head](interpret(tail, ctx));
-		} else if (head in ctx.functions) {
-			return ctx.scope[head](...tail);
-		} else if (head in ctx.scope) {
-			throw new TypeError();
-			return null;
+		if (Array.isArray(lst)) {
+			if (lst.length===0) {
+				return lst;
+			}
+			let [head, ...tail] = lst; 
+			if (head in ctx.specials) {
+				return ctx.scope[head](tail, ctx);
+			} else if (head in ctx.macros) {
+				return ctx.scope[head](tail, ctx);
+			} else if (head in ctx.functions) {
+				let [head, ...tail] = lst.map(function(element) {return interpret(element, ctx);});
+				return head(...tail);
+			} else if (head in ctx.scope) {
+				throw new TypeError(head + " is not callable.");
+				return null;
+			} else {
+				throw new ReferenceError(head + " does not exist in this scope.");
+				return null;
+			}
 		} else {
-			throw new ReferenceError();
-			return null;
+			// this will do strings wrong
+			if (ctx.scope.hasOwnProperty(lst)) {
+				return ctx.scope[lst];
+			} else {
+				return lst;
+			}
 		}
 	}
 
@@ -147,40 +198,40 @@ Lisp = (function(Lisp) {
 		} else {
 			return lst.slice(1);
 		}
-	};
+	}
 
 	function eq(a, b) {
 		return (a===b);
-	};
+	}
 
 
-	function lambda([identifier, args, body]) {
+	function lambda([identifier, args, body],context) {
 		// so...does this get added to the scope automatically?
 		return function() {
 			// I'm not sure how to get the right scope here...
-			let ctx = context(this);
+			let ctx = context(context);
 			for (let i=0; i<args.length; i++) {
 				ctx.scope[args[i]] = arguments[i];
 			}
 			return interpret(body, ctx);
 		}
-	};
+	}
 
-	function cond(clauses) {
-		for (clause in clauses) {
-			if (interpret(clause[0],this)) {
-				return interpret(clause[1],this);
+	function cond(clauses, ctx) {
+		for (let clause of clauses) {
+			if (interpret(clause[0],ctx)) {
+				return interpret(clause[1],ctx);
 			}
 		}
 		throw new Error();
-	};
+	}
 
 	function quote(lst) {
 
-	};
+	}
 	function atom() {
 		// returns true for anything but a non-quoted list
-	};
+	}
 
 	function add() {
 		let acc = 0;
@@ -188,14 +239,25 @@ Lisp = (function(Lisp) {
 			acc += arg;
 		}
 		return acc;
-	};
+	}
+
+	function println() {
+		Lisp.output(...arguments);
+		return null;
+	}
 	
-	for (let func of ["cons","car","cdr","eq","cond","lambda","atom","quote","add"]) {
+	for (let func of ["cons","car","cdr","eq","cond","lambda","atom","quote","add","println"]) {
 		eval("core.scope['" + func + "'] = " + func + ";");
 	}
-	for (let func of ["cons","car","cdr","eq","add"]) {
+	for (let func of ["cons","car","cdr","eq","add","println"]) {
 		eval("core.functions['" + func + "'] = " + func + ";");
 	}
+	for (let func of ["cond","lambda"]) {
+		eval("core.specials['" + func + "'] = " + func + ";");
+	}
+
+	core.scope.true = true;
+	core.scope.false = false;
 
 	Lisp.core = core.scope;
 	console.log("Lisp core:");
@@ -205,5 +267,17 @@ Lisp = (function(Lisp) {
 	Lisp.parse = parse;
 	Lisp.interpret = interpret;
 	Lisp.transpile = transpile;
+	function output() {
+		console.log("Output:");
+		console.log(...arguments);
+		return null;
+	}
+	Lisp.output = output;
+	Lisp.bindOutput = function(func) {
+		Lisp.output = function() {
+			func(...arguments);
+			return output(...arguments);
+		}
+	}
 	return Lisp;
 })(Lisp);
