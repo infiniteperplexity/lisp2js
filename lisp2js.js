@@ -109,7 +109,7 @@ Lisp = (function(Lisp) {
 			let [head, ...tail] = lst; 
 			if (head in ctx.specials) {
 				// probably wrong
-				return ctx.scope[head](interpret(tail, ctx));
+				return ctx.scope[head](tail, ctx, transpile);
 			} else if (head in ctx.macros) {
 				// probably wrong
 				return ctx.scope[head](interpret(tail, ctx));
@@ -217,13 +217,43 @@ Lisp = (function(Lisp) {
 		}
 	}
 
-	function cond(clauses, ctx) {
-		for (let clause of clauses) {
-			if (interpret(clause[0],ctx)) {
-				return interpret(clause[1],ctx);
+	function cond(clauses, ctx, method) {
+		method = method || interpret || transpile;
+		let code, head, tail, rest;
+		if (clauses.length===0) {
+			code = `new Error("You can't handle the truth!")`;
+		} else {
+			[[head, tail], ...rest] = clauses;
+			// the problem here is that inserting cond into the text requires calling it.
+			code =`(${method(head, ctx)}) ?
+					${method(tail, ctx)} :
+					${	(method===interpret) ?
+							"cond(rest, ctx, method)" :
+							cond(rest, ctx, method) }
+					;`
+			;
+		}
+		return (method===interpret) ? eval(code) : code;
+	}
+
+	function cond2(clauses, ctx, method) {
+		method = method || interpret;
+		let err = "You can't handle the truth!";
+		if (clauses.length===0) {
+			return (method===interpret) ? (new Error(err)) : `(new Error("${err}"))`;
+		} else {
+			let [[head, tail], ...rest] = clauses;
+			if (method===interpret) {
+				return interpret(head, ctx) ?
+					interpret(tail, ctx) :
+					cond(rest, ctx, method);
+			} else {
+				return `(${transpile(head, ctx)}) ?
+					${transpile(tail, ctx)} :
+					${cond(rest, ctx, method)};`
+				;
 			}
 		}
-		throw new Error();
 	}
 
 	function quote(lst) {

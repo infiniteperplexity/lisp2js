@@ -72,7 +72,7 @@
 			let interpreted = Lisp.interpret(parsed);
 			rslts = rslts + interpreted;
 			document.getElementById("lout").value = rslts;
-			let TRANSPILE = false;
+			let TRANSPILE = true;
 			if (TRANSPILE) {
 				let transpiled = Lisp.transpile(parsed);
 				document.getElementById("js").value = transpiled;
