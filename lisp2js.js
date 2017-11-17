@@ -4,12 +4,19 @@ Issues:
 	- Can't handle special whitespace in quoted strings
 	- How should we handle multi-line input?
 	- The final JS output shows the full text of any unevaluated functions
+
+Features:
+	- def, let, defmacro
+	- operators
+	- anything else used in the chapter
+	- reader macros?
 */
 
 let Lisp = {};
 
 Lisp = (function(Lisp) {
 	let SPACER = "\u0000";
+	let SREGEX = new RegExp(SPACER,"g");
 
 	function tokenize(input) {
 		//let flag quoted strings	
@@ -32,7 +39,7 @@ Lisp = (function(Lisp) {
 		let splt = trm.split(/\s+/);
 		for (let i=0; i<splt.length; i++) {
 			// reinsert whitespace in quoted strings
-			splt[i] = splt[i].replace(/\u0000/g," ");
+			splt[i] = splt[i].replace(SREGEX," ");
 		}
 		console.log("tokenized:");
 		console.log(splt);
