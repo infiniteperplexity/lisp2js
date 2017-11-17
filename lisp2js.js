@@ -256,6 +256,18 @@ Lisp = (function(Lisp) {
 		}
 	};
 
+	core.specials.if = function(lst, ctx, method) {
+		method = method || interpret || transpile;
+		let [test, body, fallback] = lst;
+		return (method===interpret) ?
+			(interpret(test, ctx)) ?
+				interpret(body, ctx) :
+				interpret(fallback, ctx) :
+			`((${transpile(test, ctx)}) ?
+				${transpile(body, ctx)} :
+				${transpile(fallback, ctx)})`;
+	};
+
 	core.specials.quote = function(lst, ctx, method) {
 		method = method || interpet || transpile;
 		[lst] = lst;
@@ -303,25 +315,17 @@ Lisp = (function(Lisp) {
 	};
 
 
-	 {
-
-	}
-
 	core.specials.let = function(lst, ctx, method) {
 		method = method || interpet || transpile;
 		let [bindings, ...tail] = lst;
 		let cont = context(ctx);
 		if (method===interpret) {
-			// Y-combinator for anonymous recursion
-			core.functions.Y(f => function([key, val, ...rest]) {
-				cont.scope[key] = interpret(val, ctx);
-				if (rest.length>0) {
-					f(...rest);
-				}
-			})(bindings);
+			for (let i=0; i<bindings.length; i+=2) {
+				cont.scope[bindings[i]] = interpret(bindings[i+1], ctx);
+			}
 			return interpret(tail, cont);
 		} else {
-			let txt = `(function() {
+			return (`(function() {
 				${bindings.reduce((acc,val,i,arr) => {
 					if (i%2===0) {
 						acc.push(`	let ${val}=${transpile(arr[i+1],ctx)};`);	
@@ -330,9 +334,7 @@ Lisp = (function(Lisp) {
 				},[]).join("\n")}
 				${tail.map(
 					(e,i,a) => (i===a.length-1) ? "	return " + transpile(e, ctx) : "")
-				}})();`;
-			console.log(txt);
-			return txt;
+				}})();`);
 		}
 	}
 	// *********** Core Functions ************************ //
@@ -437,6 +439,7 @@ Lisp = (function(Lisp) {
 
 	// functions defined with ordinary names
 	let others = {
+		eq : "=",
 		and : "&&",
 		or : "||",
 		not : "!",
@@ -482,3 +485,83 @@ Lisp = (function(Lisp) {
 
 	return Lisp;
 })(Lisp);
+
+
+// function macroexpand (expr, env) { // much like CLtL's macroexpand
+
+//     env  = env || global_macros;
+
+//     var count = 0;
+
+//     var me_1 = function (expr) { // me_1 is like CLtL's macroexpand-1
+
+//       if (expr && expr.constructor == Cons) {
+
+//         var macro = table_get(env, expr.car);
+
+//         if (macro) {
+
+//           count++;
+
+//           var args = mapcar2arr(me_1, expr.cdr);
+
+//           return macro.apply(null, args);
+
+//         }
+
+//         return mapcar(me_1, expr);
+
+//       }
+
+//       return expr;
+
+//     };
+
+//     while (true) {
+
+//       expr = me_1(expr);
+
+//       if (count == 0)  break;
+
+//       count = 0;
+
+//     }
+
+//     return expr;
+
+//   }
+
+
+  // specials.defmacro = function (expr, env) {
+
+  //   env = env || global_macros;
+
+  //   var def = "env[\"" + expr.car + "\"] = " + specials.lambda(expr.cdr);
+
+  //   eval(def); // macros are installed eagerly, to give other forms a chance to see them
+
+  //   return "\"" + expr.car + "\"";
+
+  // };
+
+
+
+  // var gensym = function () { // mainly used in macro definitions that introduce bindings
+
+  //   var roots = {"G$$": 0}; //
+
+  //   return function (nm) {
+
+  //     nm = nm || "G$$";
+
+  //     var count = roots[nm];
+
+  //     if (count) roots[nm] = count+1;
+
+  //     else { roots[nm] = 1; count = 0; }
+
+  //     return new String("" + nm + count);
+
+  //   };
+
+  // }();
