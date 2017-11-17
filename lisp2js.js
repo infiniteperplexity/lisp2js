@@ -4,10 +4,9 @@ Issues:
 	- Can't handle special whitespace in quoted strings
 	- How should we handle multi-line input?
 	- The final JS output shows the full text of any unevaluated functions
+	- Can't figure out a way to handle the return value of "def" in the transpiler
 
 Features:
-	- def, let, defmacro
-	- operators
 	- anything else used in the chapter
 	- reader macros?
 */
@@ -15,13 +14,13 @@ Features:
 let Lisp = {};
 
 Lisp = (function(Lisp) {
+
+	// **************** Lexxing and Parsing ******************** //
 	let SPACER = "\u0000";
 	let SREGEX = new RegExp(SPACER,"g");
-
 	function tokenize(input) {
 		//let flag quoted strings	
 		let quotes = input.replace(/\"/g,SPACER);
-		console.log(quotes);
 		let qts = quotes.split(SPACER);
 		for (let i=0; i<qts.length; i++) {
 			if (i%2===1) {
@@ -79,24 +78,15 @@ Lisp = (function(Lisp) {
 		}
 	}
 
-	function context(parent) {
-		let ctx = {};
-		if (parent===undefined) {
-			ctx.specials = {};
-			ctx.macros = {};
-			ctx.functions = {};
-			ctx.scope = {};
-		} else {
-			ctx.specials = Object.create(parent.specials);
-			ctx.macros = Object.create(parent.macros);
-			ctx.functions = Object.create(parent.functions);
-			ctx.scope = Object.create(parent.scope);
-		}
-		return ctx;
+	function parse(input) {
+		let parsed = nest(tokenize(input));
+		console.log("parsed:");
+		console.log(parsed);
+		return parsed;
 	}
-	
-	let core = context();
 
+
+	// ******************** Interpreting and Transpiling ***************** //
 	function interpret(input, ctx) {
 		console.log("interpreting...");
 		console.log(input);
@@ -141,6 +131,7 @@ Lisp = (function(Lisp) {
 			}
 		}
 	}
+
 	function transpile(input, ctx) {
 		console.log("transpiling...");
 		//console.log(input);
@@ -150,6 +141,7 @@ Lisp = (function(Lisp) {
 				return input;
 			}
 			let [head, ...tail] = input;
+			head = (head in ctx.operators) ? ctx.operators[head] : head;
 			// special form
 			if (head in ctx.specials) {
 				//console.log("special form");
@@ -161,6 +153,7 @@ Lisp = (function(Lisp) {
 			} else if (input.length>1) {
 			// process it as a list
 				let list = [head, ...tail] = input.map(function(element) {return transpile(element, ctx);});
+				head = (head in ctx.operators) ? ctx.operators[head] : head;
 				return ["(",head,")("].concat(tail.join(SPACER+", "+SPACER).split(SPACER),")").join("");
 			} else {
 				return head;
@@ -170,59 +163,67 @@ Lisp = (function(Lisp) {
 		}
 	}
 
-	function parse(input) {
-		let parsed = nest(tokenize(input));
-		console.log("parsed:");
-		console.log(parsed);
-		return parsed;
+	function context(parent) {
+		let ctx = {};
+		if (parent===undefined) {
+			ctx.specials = {};
+			ctx.macros = {};
+			ctx.functions = {};
+			// operators are not special in Lisp but they are in JS
+			ctx.operators = {};
+			ctx.scope = {};	
+		} else {
+			ctx.specials = Object.create(parent.specials);
+			ctx.macros = Object.create(parent.macros);
+			ctx.functions = Object.create(parent.functions);
+			ctx.operators = Object.create(parent.operators);
+			ctx.scope = Object.create(parent.scope);
+		}
+		return ctx;
+	}
+
+	let core = context();
+
+	// ************ API ***************** //
+	Lisp.core = core.scope;
+	Lisp.tokenize = tokenize;
+	Lisp.nest = nest; 
+	Lisp.parse = parse;
+	Lisp.interpret = interpret;
+	Lisp.transpile = transpile;
+	console.log("Lisp core:");
+	console.log(core);
+
+	function output() {
+		console.log("Output:");
+		console.log(...arguments);
+		return null;
+	}
+
+	Lisp.output = output;
+
+	Lisp.bindOutput = function(func) {
+		Lisp.output = function() {
+			func(...arguments);
+			return output(...arguments);
+		}
 	};
 
-	function cons(a, b) {
-		if (!Array.isArray(b)) {
-			console.log(lst);
-			throw new Error("cons used on non-list");
-		}
-		return [a].concat(b);
-	}
+	core.functions.println = function() {
+		Lisp.output(...arguments);
+		return null;
+	};
 
-	function car(lst) {
-		console.log(typeof(lst));
-		if (!Array.isArray(lst)  ) {
-			console.log(lst);
-			throw new Error("car used on non-list");
-		} else if (lst.length===0) {
-			throw new Error("car used on empty list");
-		} else {
-			return lst[0];
-		}
-	}
+	// ******************* Primitives ********************** //
 
-	function cdr(lst) {
-		if (!Array.isArray(lst)  ) {
-			console.log(lst);
-			throw new Error("cdr used on non-list");
-		} else if (lst.length===0) {
-			throw new Error("cdr used on empty list");
-		} else {
-			return lst.slice(1);
-		}
-	}
-
-	function eq(a, b) {
-		return (a===b);
-	}
-
-	function list() {
-		return Array.from(arguments);
-	}
-
-	function atom(a) {
-		return Array.isArray(a);
-	}
+	core.scope.true = true;
+	core.scope.false = false;
 
 
-	function lambda([args, body], ctx, method) {
-		method = method || interpret;
+	// ******************* Special Forms ******************** //
+
+	core.specials.lambda = function([args, body], ctx, method) {
+		method = method || interpret || transpile;
 		return (method===interpret) ?
 			(function() {
 				let cont = context(ctx);
@@ -233,10 +234,10 @@ Lisp = (function(Lisp) {
 			}) :
 			`(function(${args.map(arg => transpile(arg, ctx)).join(",")}) {
 				return ${transpile(body,ctx)};})`;
-	}
+	};
 
-	function cond(clauses, ctx, method) {
-		method = method || interpret;
+	core.specials.cond = function(clauses, ctx, method) {
+		method = method || interpret || transpile;
 		let err = "You can't handle the truth!";
 		if (clauses.length===0) {
 			return (method===interpret) ? (new Error(err)) : `(new Error("${err}"))`;
@@ -253,77 +254,231 @@ Lisp = (function(Lisp) {
 				;
 			}
 		}
-	}
+	};
 
-	function quote(lst, ctx, method) {
-		method = method || interpet;
+	core.specials.quote = function(lst, ctx, method) {
+		method = method || interpet || transpile;
 		[lst] = lst;
-		console.log(lst);
 		return (method===interpret) ? lst : `[${lst.join(",")}]`;
-	}
-	function atom() {
-		// returns true for anything but a non-quoted list
-	}
+	};
 
-	function add() {
-		let acc = 0;
-		for (let arg of arguments) {
-			acc += arg;
+	core.specials.and = function(lst, ctx, method) {
+		method = method || interpet || transpile;
+		let [head, ...tail] = lst;
+		return (method===interpret) ?
+			(!head) ?
+				false :
+				(tail.length===0) ?
+					head :
+					core.specials.and(tail, ctx, interpret) :
+			"("+lst.map(function(e) {return transpile(e,ctx);}).join("&&")+")"
+		;
+	};
+
+	core.specials.or = function(lst, ctx, method) {
+		method = method || interpet || transpile;
+		let [head, ...tail] = lst;
+		return (method===interpret) ?
+			(!head) ?
+				false :
+				(tail.length===0) ?
+					head :
+					core.specials.and(tail, ctx, interpret) :
+			"("+lst.map(function(e) {return transpile(e,ctx);}).join("||")+")"
+		;
+	};
+
+	core.specials.def = function(lst, ctx, method) {
+		method = method || interpet || transpile;
+		let [name, val] = lst;
+		if (method===interpret) {
+			ctx.scope[name] = interpret(val, ctx);
+			// huh...if it's a function, I could test that and add it to functions...
+			// ...but that seems like the wrong approach...
+			return name;
+		} else {
+			// oh dear...can the return value translate?
+			return `let ${name} = ${transpile(val, ctx)}`;
 		}
-		return acc;
+	};
+
+
+	 {
+
 	}
 
-	function println() {
-		Lisp.output(...arguments);
-		return null;
+	core.specials.let = function(lst, ctx, method) {
+		method = method || interpet || transpile;
+		let [bindings, ...tail] = lst;
+		let cont = context(ctx);
+		if (method===interpret) {
+			// Y-combinator for anonymous recursion
+			core.functions.Y(f => function([key, val, ...rest]) {
+				cont.scope[key] = interpret(val, ctx);
+				if (rest.length>0) {
+					f(...rest);
+				}
+			})(bindings);
+			return interpret(tail, cont);
+		} else {
+			let txt = `(function() {
+				${bindings.reduce((acc,val,i,arr) => {
+					if (i%2===0) {
+						acc.push(`	let ${val}=${transpile(arr[i+1],ctx)};`);	
+					}
+					return acc;
+				},[]).join("\n")}
+				${tail.map(
+					(e,i,a) => (i===a.length-1) ? "	return " + transpile(e, ctx) : "")
+				}})();`;
+			console.log(txt);
+			return txt;
+		}
 	}
-	
-	for (let func of ["cons","car","cdr","eq","cond","lambda","atom","list","quote","add","println"]) {
-		eval("core.scope['" + func + "'] = " + func + ";");
-	}
-	for (let func of ["cons","car","cdr","eq","list","add","atom","println"]) {
-		eval("core.functions['" + func + "'] = " + func + ";");
-	}
-	for (let func of ["cond","lambda","quote"]) {
-		eval("core.specials['" + func + "'] = " + func + ";");
-	}
-	for (let op of ["+","-","*","/","%","&&","||"]) {
-		eval(`function f() {
+	// *********** Core Functions ************************ //
+
+	core.functions.cons = function(a, b) {
+		if (!Array.isArray(b)) {
+			console.log(lst);
+			throw new TypeError("cons used on non-list");
+		}
+		return [a].concat(b);
+	};
+
+	core.functions.car = function(lst) {
+		if (!Array.isArray(lst)  ) {
+			console.log(lst);
+			throw new TypeError("car used on non-list");
+		} else if (lst.length===0) {
+			throw new Error("car used on empty list");
+		} else {
+			return lst[0];
+		}
+	};
+
+	core.functions.cdr = function(lst) {
+		if (!Array.isArray(lst)  ) {
+			console.log(lst);
+			throw new TypeError("cdr used on non-list");
+		} else if (lst.length===0) {
+			throw new Error("cdr used on empty list");
+		} else {
+			return lst.slice(1);
+		}
+	};
+
+	core.functions.list = function() {
+		return Array.from(arguments);
+	};
+
+	core.functions.atom = function(a) {
+		return Array.isArray(a);
+	};
+
+	core.functions.eq = function(a, b) {
+		return (a===b);
+	};
+
+	core.functions.not = function(a) {
+		return !a;
+	};
+
+	core.functions.Y = f => (x => x(x))(x => f(y => x(x)(y)));
+
+
+	// *********************** Operators ******************************* //
+
+	let mathematical = {
+		_PLUS_ : "+",
+		_MINUS_ : "-",
+		_MULTIPLY_ : "*",
+		_DIVISION_ : "/",
+		_MODULUS_ : "%"
+	};
+	for (let op in mathematical) {
+		let ops = mathematical;
+		let oper = function() {
 			let args = Array.from(arguments);
-			return (args.length===1) ? args[0] : args[0]${op}f(...args.slice(1));
-		};
-		core.functions["${op}"] = core.scope["${op}"] = f;`);
-
+			let last = args.pop();
+			if (args.length===0) {
+				return last;
+			} else {
+				return(eval("oper(...args)"+ops[op]+"last;"));
+			}
+		}
+		core.functions[op] = oper;
+		core.operators[ops[op]] = op;
 	}
 
-	function plus() {
-	let args = Array.from(arguments);
-	return (args.length===1) ? args[0] : args[0]+plus(...args.slice(1));
-}
-	core.scope.true = true;
-	core.scope.false = false;
-
-	Lisp.core = core.scope;
-	console.log("Lisp core:");
-	console.log(core);
-	Lisp.tokenize = tokenize;
-	Lisp.nest = nest; 
-	Lisp.parse = parse;
-	Lisp.interpret = interpret;
-	Lisp.transpile = transpile;
-	function output() {
-		console.log("Output:");
-		console.log(...arguments);
-		return null;
+	let comparison = {
+		_EQ_ : "==",
+		_SEQ_ : "===",
+		_NEQ_ : "!=",
+		_NSEQ_ : "!==",
+		_GT_ : ">",
+		_GE_ : ">=",
+		_LT_ : "<",
+		_LE_ : "<="
+	};
+	// It's debatable whether != and !== should chain in this way.
+	for (let op in comparison) {
+		let ops = comparison;
+		let oper = function() {
+			let [head, ...tail] = Array.from(arguments);
+			if (tail.length===0) {
+				return true;
+			} else {
+				return eval("(head"+ops[op]+"tail[0]) && oper(...tail);")
+			}
+		}
+		core.functions[op] = oper;
+		core.operators[ops[op]] = op;
 	}
-	Lisp.output = output;
-	Lisp.bindOutput = function(func) {
-		Lisp.output = function() {
-			func(...arguments);
-			return output(...arguments);
+
+	// functions defined with ordinary names
+	let others = {
+		and : "&&",
+		or : "||",
+		not : "!",
+		inc: "++",
+		dec: "--"
+	};
+
+	for (let op in others) {
+		let ops = others;
+		core.operators[ops[op]] = op;
+	}
+
+	// JS operators not used in this implementation
+	let unused = [
+		"=",
+		"+=",
+		"-=",
+		"*=",
+		"/=",
+		"%=",
+		"&",
+		"|",
+		"~",
+		"^",
+		"<<",
+		">>"
+	];
+
+	// ********************** Populate core namespace ***************** //
+	for (let s of ["specials","macros","functions"]) {
+		for (let form in core[s]) {
+			core.scope[form] = core[s][form];
 		}
 	}
+	for (let operator in core.operators) {
+		//core.scope[operator] = core.operators[operator];
+		for (let s of ["specials","macros","functions"]) {
+			if (core.operators[operator] in core[s]) {
+				core.scope[operator] = core[s][operator] = core[s][core.operators[operator]];
+			}
+		}
+	}
+
 	return Lisp;
 })(Lisp);
-
-

@@ -40,7 +40,7 @@
 			<button id="sugar" onclick="sugar()">Sugar</button>
 		</td>
 		<td>
-			<button id="transpile" onclick="transpile();">Transpile</button>
+			<button id="transpile" onclick="translate();">Transpile</button>
 		</td>
 	</tr>
 </table>
@@ -53,6 +53,7 @@
 		for (n in Lisp.core) {
 			if (window[n]===undefined) {
 				window[n] = Lisp.core[n];
+				// does this fail silently for operators?
 			} else {
 				alert("Warning: " + n + " already defined!");
 			}
@@ -63,7 +64,7 @@
 			// document.getElementById("lisp").value = sugar(lisp);
 			// transpile();
 		}
-		function transpile() {
+		function translate() {
 			let lisp = document.getElementById("lisp").value;
 			document.getElementById("js").value = "";
 			document.getElementById("lout").value = "";
