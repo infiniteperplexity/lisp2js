@@ -287,7 +287,19 @@ Lisp = (function(Lisp) {
 	for (let func of ["cond","lambda","quote"]) {
 		eval("core.specials['" + func + "'] = " + func + ";");
 	}
+	for (let op of ["+","-","*","/","%","&&","||"]) {
+		eval(`function f() {
+			let args = Array.from(arguments);
+			return (args.length===1) ? args[0] : args[0]${op}f(...args.slice(1));
+		};
+		core.functions["${op}"] = core.scope["${op}"] = f;`);
 
+	}
+
+	function plus() {
+	let args = Array.from(arguments);
+	return (args.length===1) ? args[0] : args[0]+plus(...args.slice(1));
+}
 	core.scope.true = true;
 	core.scope.false = false;
 
@@ -313,3 +325,5 @@ Lisp = (function(Lisp) {
 	}
 	return Lisp;
 })(Lisp);
+
+
