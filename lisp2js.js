@@ -89,10 +89,12 @@ Lisp = (function(Lisp) {
 			} else if (head in ctx.macros) {
 				//console.log("macro");
 				return ctx.scope[head](tail, ctx, transpile);
-			} else {
+			} else if (input.length>1) {
 			// process it as a list
 				let list = [head, ...tail] = input.map(function(element) {return transpile(element, ctx);});
 				return ["(",head,")("].concat(tail.join("\\, \\").split("\\"),")").join("");
+			} else {
+				return head;
 			}
 		} else {
 			return input;

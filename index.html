@@ -10,7 +10,7 @@
 
 <table>
 	<tr>
-		<th>Preprocess</th>
+		<th>Sugar</th>
 		<th>Lisp Code</th>
 		<th>JS Code</th>
 		<th>Lisp Output</th>
@@ -18,10 +18,13 @@
 	</tr>
 	<tr>
 		<td>
-			<textarea id="pre" type="text" style="width:250px;height:500px;"></textarea>
+			<textarea id="pre" type="text" style="width:250px;height:500px;">(not implemented)</textarea>
 		</td>
 		<td>
-			<textarea id="lisp" type="text" style="width:250px;height:500px;"></textarea>
+			<textarea id="lisp" type="text" style="width:250px;height:500px;">
+			(so far the only useable functions / specials are cond, lambda, eq, println, and add (not "+").  car, cdr, and cons also exist, but there is no way to create list so you cannot pass them
+			valid arguments.)
+			</textarea>
 		</td>
 		<td>
 			<textarea id="js" type="text" style="width:250px;height:500px;"></textarea>
@@ -35,7 +38,7 @@
 	</tr>
 	<tr>
 		<td>
-			<button id="transnotate" onclick="transnotate()">Transnotate</button>
+			<button id="sugar" onclick="sugar()">Sugar</button>
 		</td>
 		<td>
 			<button id="transpile" onclick="transpile();">Transpile</button>
@@ -46,7 +49,7 @@
 	</body>
 
 	<script src="lisp2js.js"></script>
-	<script src="semisweet.js"></script>
+	<script src="sugar.js"></script>
 	<script>
 		for (n in Lisp.core) {
 			if (window[n]===undefined) {
@@ -56,13 +59,16 @@
 			}
 		}
 
-		function transnotate() {
+		function sugar() {
 			// let lisp = document.getElementById("pre").value;
-			// document.getElementById("lisp").value = semisweet(lisp);
+			// document.getElementById("lisp").value = sugar(lisp);
 			// transpile();
 		}
 		function transpile() {
 			let lisp = document.getElementById("lisp").value;
+			document.getElementById("js").value = "";
+			document.getElementById("lout").value = "";
+			document.getElementById("jsout").value = "";
 			let parsed = Lisp.parse(lisp);
 			let rslts = "";
 			let f = function() {
