@@ -1,22 +1,39 @@
 /*
 Issues:
-	- Parses strings wrong if they have spaces
-	- Parses strings wrong if they have values equal to identifiers
+	- Not sure if it parses strings correctly in general
+	- Can't handle special whitespace in quoted strings
 	- How should we handle multi-line input?
+	- The final JS output shows the full text of any unevaluated functions
 */
 
 let Lisp = {};
 
 Lisp = (function(Lisp) {
+	let SPACER = "\u0000";
 
 	function tokenize(input) {
+		//let flag quoted strings	
+		let quotes = input.replace(/\"/g,SPACER);
+		console.log(quotes);
+		let qts = quotes.split(SPACER);
+		for (let i=0; i<qts.length; i++) {
+			if (i%2===1) {
+				// swap whitespace in quotes strings
+				qts[i] = qts[i].replace(/\s/g,SPACER);			
+			}
+		}
+		let replaced = qts.join('"');
 		// pad parentheses with spaces
-		let lpars = input.replace(/\(/g,' ( ');
-		let rpars = lpars.replace(/\)/g,' ) ');
+		let lpars = replaced.replace(/\(/g," ( ");
+		let rpars = lpars.replace(/\)/g," ) ");
 		// trim the edges
 		let trm = rpars.trim();
 		// split on whitespace
 		let splt = trm.split(/\s+/);
+		for (let i=0; i<splt.length; i++) {
+			// reinsert whitespace in quoted strings
+			splt[i] = splt[i].replace(/\u0000/g," ");
+		}
 		console.log("tokenized:");
 		console.log(splt);
 		return splt;	
@@ -47,8 +64,9 @@ Lisp = (function(Lisp) {
 	function atomize(token) {
 		if (!isNaN(parseFloat(token))) {
 			return parseFloat(token);
-		} else if (token[0]==='"' && token.slice(-1)==='"') {
-			return token.slice(1,-1);
+		//// Is this line actually needed?
+		//} else if (token[0]==='"' && token.slice(-1)==='"') {
+		//	return token.slice(1,-1);
 		} else {
 			return token;
 		}
@@ -72,38 +90,9 @@ Lisp = (function(Lisp) {
 	
 	let core = context();
 
-	function transpile(input, ctx) {
-		console.log("transpiling...");
-		//console.log(input);
-		ctx = ctx || core;
-		if (Array.isArray(input)) {
-			if (input.length===0) {
-				return input;
-			}
-			let [head, ...tail] = input;
-			// special form
-			if (head in ctx.specials) {
-				//console.log("special form");
-				return ctx.scope[head](tail, ctx, transpile);
-			// macro identifier
-			} else if (head in ctx.macros) {
-				//console.log("macro");
-				return ctx.scope[head](tail, ctx, transpile);
-			} else if (input.length>1) {
-			// process it as a list
-				let list = [head, ...tail] = input.map(function(element) {return transpile(element, ctx);});
-				return ["(",head,")("].concat(tail.join("\\, \\").split("\\"),")").join("");
-			} else {
-				return head;
-			}
-		} else {
-			return input;
-		}
-	}
-
 	function interpret(input, ctx) {
 		console.log("interpreting...");
-		//console.log(input);
+		console.log(input);
 		ctx = ctx || core;
 		if (Array.isArray(input)) {
 			if (input.length===0) {
@@ -113,11 +102,11 @@ Lisp = (function(Lisp) {
 			// special form
 			if (head in ctx.specials) {
 				console.log("special form");
-				return ctx.scope[head](tail, ctx);
+				return ctx.scope[head](tail, ctx, interpret);
 			// macro identifier
 			} else if (head in ctx.macros) {
 				console.log("macro");
-				return ctx.scope[head](tail, ctx);
+				return ctx.scope[head](tail, ctx, interpret);
 			} else {
 			// process it as a list
 				let list = input.map(function(element) {return interpret(element, ctx);});
@@ -145,6 +134,34 @@ Lisp = (function(Lisp) {
 			}
 		}
 	}
+	function transpile(input, ctx) {
+		console.log("transpiling...");
+		//console.log(input);
+		ctx = ctx || core;
+		if (Array.isArray(input)) {
+			if (input.length===0) {
+				return input;
+			}
+			let [head, ...tail] = input;
+			// special form
+			if (head in ctx.specials) {
+				//console.log("special form");
+				return ctx.scope[head](tail, ctx, transpile);
+			// macro identifier
+			} else if (head in ctx.macros) {
+				//console.log("macro");
+				return ctx.scope[head](tail, ctx, transpile);
+			} else if (input.length>1) {
+			// process it as a list
+				let list = [head, ...tail] = input.map(function(element) {return transpile(element, ctx);});
+				return ["(",head,")("].concat(tail.join(SPACER+", "+SPACER).split(SPACER),")").join("");
+			} else {
+				return head;
+			}
+		} else {
+			return input;
+		}
+	}
 
 	function parse(input) {
 		let parsed = nest(tokenize(input));
@@ -155,16 +172,19 @@ Lisp = (function(Lisp) {
 
 	function cons(a, b) {
 		if (!Array.isArray(b)) {
-			throw new Error();
+			console.log(lst);
+			throw new Error("cons used on non-list");
 		}
 		return [a].concat(b);
 	}
 
 	function car(lst) {
+		console.log(typeof(lst));
 		if (!Array.isArray(lst)  ) {
-			throw new Error();
+			console.log(lst);
+			throw new Error("car used on non-list");
 		} else if (lst.length===0) {
-			throw new Error();
+			throw new Error("car used on empty list");
 		} else {
 			return lst[0];
 		}
@@ -172,9 +192,10 @@ Lisp = (function(Lisp) {
 
 	function cdr(lst) {
 		if (!Array.isArray(lst)  ) {
-			throw new Error();
+			console.log(lst);
+			throw new Error("cdr used on non-list");
 		} else if (lst.length===0) {
-			throw new Error();
+			throw new Error("cdr used on empty list");
 		} else {
 			return lst.slice(1);
 		}
@@ -183,6 +204,15 @@ Lisp = (function(Lisp) {
 	function eq(a, b) {
 		return (a===b);
 	}
+
+	function list() {
+		return Array.from(arguments);
+	}
+
+	function atom(a) {
+		return Array.isArray(a);
+	}
+
 
 	function lambda([args, body], ctx, method) {
 		method = method || interpret;
@@ -218,8 +248,11 @@ Lisp = (function(Lisp) {
 		}
 	}
 
-	function quote(lst) {
-
+	function quote(lst, ctx, method) {
+		method = method || interpet;
+		[lst] = lst;
+		console.log(lst);
+		return (method===interpret) ? lst : `[${lst.join(",")}]`;
 	}
 	function atom() {
 		// returns true for anything but a non-quoted list
@@ -238,13 +271,13 @@ Lisp = (function(Lisp) {
 		return null;
 	}
 	
-	for (let func of ["cons","car","cdr","eq","cond","lambda","atom","quote","add","println"]) {
+	for (let func of ["cons","car","cdr","eq","cond","lambda","atom","list","quote","add","println"]) {
 		eval("core.scope['" + func + "'] = " + func + ";");
 	}
-	for (let func of ["cons","car","cdr","eq","add","println"]) {
+	for (let func of ["cons","car","cdr","eq","list","add","atom","println"]) {
 		eval("core.functions['" + func + "'] = " + func + ";");
 	}
-	for (let func of ["cond","lambda"]) {
+	for (let func of ["cond","lambda","quote"]) {
 		eval("core.specials['" + func + "'] = " + func + ";");
 	}
 
