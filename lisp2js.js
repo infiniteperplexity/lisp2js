@@ -48,11 +48,14 @@ Lisp = (function(Lisp) {
 	function nest(tokens, lst) {
 		// begin accumulating a list
 		if (lst===undefined) {
+			console.log("building new list");
 			return nest(tokens,[]);
 		} else {
 			let token = tokens.shift();
-			// I'm not clear what this does
+			// finish reading input
 			if (token===undefined) {
+				//this returns only the last list, so you have to use progn
+				// eventually want to wrap with an implicit progn
 				return lst.pop();
 			// open parenthesis begins a new list
 			} else if (token==="(") {
@@ -115,6 +118,7 @@ Lisp = (function(Lisp) {
 					console.log("named function");
 					return ctx.functions[head](...tail);
 				} else if  (!(Array.isArray(head)) && tail.length>0) {
+					console.log(tail);
 					console.log("non-standard value " + head + " at head of list");
 				} else {
 					console.log("recursing...");
@@ -134,7 +138,7 @@ Lisp = (function(Lisp) {
 
 	function transpile(input, ctx) {
 		console.log("transpiling...");
-		//console.log(input);
+		console.log(input);
 		ctx = ctx || core;
 		if (Array.isArray(input)) {
 			if (input.length===0) {
@@ -222,12 +226,33 @@ Lisp = (function(Lisp) {
 
 	// ******************* Special Forms ******************** //
 
+	core.specials.progn = function(args, ctx, method) {
+		method = method || interpret || transpile;
+		let [head, ...rest] = args;
+		if (method===interpret) {
+			if (rest.length===0) {
+				return interpret(head, ctx);
+			} else {
+				interpret(head);
+				return progn(rest, ctx, interpret);
+				
+			}
+		} else {
+			if (rest.length===0) {
+				return transpile(head, ctx);
+			} else {
+				return transpile(head, ctx)+";\n"+progn(rest, ctx, transpile);
+			}
+		}
+	};
+
 	core.specials.lambda = function([args, body], ctx, method) {
 		method = method || interpret || transpile;
 		return (method===interpret) ?
 			(function() {
 				let cont = context(ctx);
 				Array.prototype.map.call(arguments,function(_,i) {
+					// should this interpret?
 					cont.scope[args[i]]=arguments[i];
 				});
 				return interpret(body, cont);
@@ -337,6 +362,46 @@ Lisp = (function(Lisp) {
 				}})();`);
 		}
 	}
+
+	//(defmacro falsify (v) (list (quote def) v false))
+	// (falsify foo) -> (def foo false)
+	// core.macros.falsify = function(lst, ctx, method) {
+	// 	interpret([def, lst[0], false]);
+	// this feels like it's getting close, but it's slightly off...
+	// is it possible that it's just quote that doesn't work right?
+	// a macro is a lisp function that returns expressions
+	core.specials.defmacro = function(lst, ctx, method) {
+		method = method || interpet || transpile;
+		let [name, args, ...body] = lst;
+		let cont = context(ctx);
+		ctx.macros[name] = ctx.scope[name] = function() {
+			Array.prototype.map.call(arguments, function(_,i) {
+				cont.scope[args[i]] = arguments[i];
+			});
+			return interpret(body.map(e=>interpret(e,cont)), cont);
+		}
+	};
+	// so...can I answer coherently why "(list + 1 1)" returns (<function> 1 1)?
+	// actually maybe I can...is it because lists passed as arguments aren't interpreted, but items are?
+	// '(a b c) = (list 'a 'b 'c)
+	// ,@ is a horrible visual design choice, but it strips a layer of parentheses, and it tends to be used
+		// for macros that take a variable number of arguments
+	// Paul Graham has convinced me that syntax quoting is good.
+	// "whenever you find a parenthesis that isn't part of an argument in the macro call..."
+	// while (test &body body) confuses me a bit.  What's the last "body"?
+	// should I look up "inline" on page 26, from page 102?
+	// what is progn?  I think it's "do"
+	// Macros typically do one of four things...
+		// Transformation - I don't quite get this...
+		// Binding - This one I get.
+		// Conditional evalution.
+		// Multiple evaluation (loops)
+	// Plus several more that apparently didn't count...
+		// Using the calling environment, which you usually don't want to do.
+		// Wrapping a new environment
+		// Inlining
+	// Macros can't be passed as arguments, so there's a new layer of abstraction you can't do
+	
 	// *********** Core Functions ************************ //
 
 	core.functions.cons = function(a, b) {
@@ -486,6 +551,7 @@ Lisp = (function(Lisp) {
 	return Lisp;
 })(Lisp);
 
+//(defmacro falsify (v) (list (quote def) v false))
 
 // function macroexpand (expr, env) { // much like CLtL's macroexpand
 

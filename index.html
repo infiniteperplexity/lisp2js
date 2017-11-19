@@ -76,11 +76,11 @@
 			}
 			Lisp.bindOutput(f);
 			let interpreted = Lisp.interpret(parsed);
-			rslts = rslts + interpreted;
+			rslts+=interpreted;
 			document.getElementById("lout").value = rslts;
 			let TRANSPILE = true;
 			if (TRANSPILE) {
-				let transpiled = Lisp.transpile(parsed);
+				let transpiled = Lisp.transpile(parsed)+";";
 				document.getElementById("js").value = transpiled;
 				let txt = "";
 				function println(line) {
