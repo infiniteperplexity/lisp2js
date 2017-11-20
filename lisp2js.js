@@ -172,8 +172,6 @@ Lisp = (function(Lisp) {
 			head = (scp[head]!==undefined && scp[head].__reserved__) ? scp[head].__reserved__ : head;
 			if (scp[head] instanceof Function && (scp[head].__special__ || scp[head].__macro__)) {
 				// macros and special forms
-				console.log("transpiling special/macro "+head+"...");
-				console.log("...on ["+JSON.stringify(tail)+"]");
 				debug("transpiling special/macro "+head+"...");
 				debug("...on ["+JSON.stringify(tail)+"]");
 				return scp[head](tail, scp, transpile);
@@ -241,26 +239,6 @@ Lisp = (function(Lisp) {
 	Lisp.transpile = transpile;
 	console.log("Lisp core:");
 	console.log(core);
-
-	//(quote ((quote (1 2)) (quote (3 4))))
-	//(do (println 1) (println 2))
-	//(do (defmacro twoify (v) (list (quote def) v 2)) (twoify foo) (println foo))
-// (defmacro our-expander (name) ‘(get ,name ’expander))
-
-// (defmacro our-defmacro (name parms &body body)
-// 	(let ((g (gensym)))
-// 		‘(progn
-// 			(setf (our-expander ’,name)
-// 				#’(lambda (,g)
-// 					(block ,name
-// 						(destructuring-bind ,parms (cdr ,g)
-// 							,@body))))
-// 			’,name)))
-
-// (defun our-macroexpand-1 (expr)
-// 	(if (and (consp expr) (our-expander (car expr)))
-// 		(funcall (our-expander (car expr)) expr)
-		// expr))
 
 	function output() {
 		console.log("Output:");
@@ -429,66 +407,40 @@ Lisp = (function(Lisp) {
 		}
 	}
 
-
-// this syntax works correctly when converted to Clojure
-//(do (defmacro twoify (v) (list (quote def) v 2)) (twoify foo) (println foo))
-//(do (defmacro twoify (v) (list (quote def) v 2)) (twoify foo))
-// This is Paul Graham's suggested syntax
-// (defmacro our-expander (name) ‘(get ,name ’expander))
-
-// (defmacro our-defmacro (name parms &body body)
-// 	(let ((g (gensym)))
-// 		‘(progn
-// 			(setf (our-expander ’,name)
-// 				#’(lambda (,g)
-// 					(block ,name
-// 						(destructuring-bind ,parms (cdr ,g)
-// 							,@body))))
-// 			’,name)))
-
-// (defun our-macroexpand-1 (expr)
-// 	(if (and (consp expr) (our-expander (car expr)))
-// 		(funcall (our-expander (car expr)) expr)
-		// expr))
 	specials.defmacro = function(lst, scp, method) {
 		method = method || interpet || transpile;
 		let [name, args, body] = lst;
-		let mscp = scope(scp);
 		let macro = (function() {
-			let [margs, mscp, mmethod] = arguments;
-			Array.prototype.map.call(margs, function(_,i) {
-				mscp[args[i]] = margs[i];
+			let mscp = scope(scp);
+			let [margs, cscp, mmethod] = arguments;
+			Array.prototype.map.call(margs, function(arg,i) {
+				mscp[args[i]] = arg;
 			});
-			return (mmethod===interpret) ?
-				interpret(interpret(body, mscp)) :
-				transpile(interpret(body, mscp));
+			return mmethod(interpret(body, mscp),cscp);
 		});
-		scp[name] = macro;
-		macro.__macro__ = true;
+		macro.__body__ = body;
+		macro.__args__ = args;
+		// if this exact macro has already been defined...
+		// ...usually because interpret and transpile were run sequentially
+		if (!scp[name] || !(scp[name] instanceof Function) || scp[name].toSource()!==macro.toSource()) {
+			scp[name] = macro;
+			macro.__macro__ = true;
+		}
 		return (method===interpret) ? macro : name + "; // macro definition";
 	};
 
-	// so...can I answer coherently why "(list + 1 1)" returns (<function> 1 1)?
-	// actually maybe I can...is it because lists passed as arguments aren't interpreted, but items are?
-	// '(a b c) = (list 'a 'b 'c)
-	// ,@ is a horrible visual design choice, but it strips a layer of parentheses, and it tends to be used
-		// for macros that take a variable number of arguments
-	// Paul Graham has convinced me that syntax quoting is good.
-	// "whenever you find a parenthesis that isn't part of an argument in the macro call..."
-	// while (test &body body) confuses me a bit.  What's the last "body"?
-	// should I look up "inline" on page 26, from page 102?
-	// what is progn?  I think it's "do"
-	// Macros typically do one of four things...
-		// Transformation - I don't quite get this...
-		// Binding - This one I get.
-		// Conditional evalution.
-		// Multiple evaluation (loops)
-	// Plus several more that apparently didn't count...
-		// Using the calling environment, which you usually don't want to do.
-		// Wrapping a new environment
-		// Inlining
-	// Macros can't be passed as arguments, so there's a new layer of abstraction you can't do
-	
+	specials.macroexpand = function([name, args], scp, method) {
+		method = method || interpet || transpile;
+		let mscp = scope(scp);
+		let macro = scp[name];
+		Array.prototype.map.call(args, function(arg,i) {
+			mscp[macro.__args__[i]] = arg;
+		});
+		return (method===interpret) ?
+			interpret(macro.__body__, mscp) :
+			transpile(interpret(macro.__body__, mscp), scp);
+	};
+
 	// *********** Core Functions ************************ //
 
 	core.cons = function(a, b) {
@@ -641,84 +593,3 @@ Lisp = (function(Lisp) {
 
 	return Lisp;
 })(Lisp);
-
-//(defmacro falsify (v) (list (quote def) v false))
-
-// function macroexpand (expr, env) { // much like CLtL's macroexpand
-
-//     env  = env || global_macros;
-
-//     var count = 0;
-
-//     var me_1 = function (expr) { // me_1 is like CLtL's macroexpand-1
-
-//       if (expr && expr.constructor == Cons) {
-
-//         var macro = table_get(env, expr.car);
-
-//         if (macro) {
-
-//           count++;
-
-//           var args = mapcar2arr(me_1, expr.cdr);
-
-//           return macro.apply(null, args);
-
-//         }
-
-//         return mapcar(me_1, expr);
-
-//       }
-
-//       return expr;
-
-//     };
-
-//     while (true) {
-
-//       expr = me_1(expr);
-
-//       if (count == 0)  break;
-
-//       count = 0;
-
-//     }
-
-//     return expr;
-
-//   }
-
-
-  // specials.defmacro = function (expr, env) {
-
-  //   env = env || global_macros;
-
-  //   var def = "env[\"" + expr.car + "\"] = " + specials.lambda(expr.cdr);
-
-  //   eval(def); // macros are installed eagerly, to give other forms a chance to see them
-
-  //   return "\"" + expr.car + "\"";
-
-  // };
-
-
-
-  // var gensym = function () { // mainly used in macro definitions that introduce bindings
-
-  //   var roots = {"G$$": 0}; //
-
-  //   return function (nm) {
-
-  //     nm = nm || "G$$";
-
-  //     var count = roots[nm];
-
-  //     if (count) roots[nm] = count+1;
-
-  //     else { roots[nm] = 1; count = 0; }
-
-  //     return new String("" + nm + count);
-
-  //   };
-
-  // }();
