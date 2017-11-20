@@ -101,36 +101,35 @@ Lisp = (function(Lisp) {
 			let [head, ...tail] = input;
 			// special form
 			if (head in ctx.specials) {
-				console.log("special form");
+				//console.log("special form");
 				return ctx.scope[head](tail, ctx, interpret);
 			// macro identifier
 			} else if (head in ctx.macros) {
-				console.log("macro");
+				//console.log("macro");
 				return ctx.scope[head](tail, ctx, interpret);
 			} else {
 			// process it as a list
 				let list = input.map(function(element) {return interpret(element, ctx);});
 				[head, ...tail] = list;
 				if (head instanceof Function) {
-					console.log("anonymous function");
+					//console.log("anonymous function");
 					return head(...tail);
 				} else if (head in ctx.functions) {
-					console.log("named function");
+					//console.log("named function");
 					return ctx.functions[head](...tail);
 				} else if  (!(Array.isArray(head)) && tail.length>0) {
-					console.log(tail);
 					console.log("non-standard value " + head + " at head of list");
 				} else {
-					console.log("recursing...");
+					//console.log("recursing...");
 					return list;
 				}
 			}
 		} else {
 			if (ctx.scope.hasOwnProperty(input)) {
-				console.log("named value");
+				//console.log("named value");
 				return ctx.scope[input];
 			} else {
-				console.log("primitive value");
+				//console.log("primitive value");
 				return input;
 			}
 		}
@@ -142,30 +141,35 @@ Lisp = (function(Lisp) {
 		ctx = ctx || core;
 		if (Array.isArray(input)) {
 			if (input.length===0) {
+				console.log("empty array");
 				return input;
 			}
 			let [head, ...tail] = input;
 			head = (head in ctx.operators) ? ctx.operators[head] : head;
 			// special form
 			if (head in ctx.specials) {
-				//console.log("special form");
+				console.log("special form");
 				return ctx.scope[head](tail, ctx, transpile);
 			// macro identifier
 			} else if (head in ctx.macros) {
-				//console.log("macro");
+				console.log("macro");
 				return ctx.scope[head](tail, ctx, transpile);
 			} else if (input.length>1) {
 			// process it as a list
+				console.log("as list");
 				let list = [head, ...tail] = input.map(function(element) {return transpile(element, ctx);});
 				head = (head in ctx.operators) ? ctx.operators[head] : head;
 				return ["(",head,")("].concat(tail.join(SPACER+", "+SPACER).split(SPACER),")").join("");
 			} else {
+				console.log("head");
 				return head;
 			}
 		} else {
+			console.log("thing itself");
 			return input;
 		}
 	}
+	//(quote (println 2))
 
 	function context(parent) {
 		let ctx = {};
@@ -295,8 +299,7 @@ Lisp = (function(Lisp) {
 
 	core.specials.quote = function(lst, ctx, method) {
 		method = method || interpet || transpile;
-		[lst] = lst;
-		return (method===interpret) ? lst : `[${lst.join(",")}]`;
+		return (method===interpret) ? lst[0] : (typeof(lst[0])==="string")?('"'+e+'"'):e]}`;
 	};
 
 	core.specials.and = function(lst, ctx, method) {
@@ -363,8 +366,7 @@ Lisp = (function(Lisp) {
 		}
 	}
 
-	//(defmacro falsify (v) (list (quote def) v false))
-	// (falsify foo) -> (def foo false)
+	//(progn (defmacro twoify (v) (list (quote def) v 2)) (twoify foo) (foo))
 	// core.macros.falsify = function(lst, ctx, method) {
 	// 	interpret([def, lst[0], false]);
 	// this feels like it's getting close, but it's slightly off...
@@ -373,12 +375,21 @@ Lisp = (function(Lisp) {
 	core.specials.defmacro = function(lst, ctx, method) {
 		method = method || interpet || transpile;
 		let [name, args, ...body] = lst;
+		// args are the arguments specified in defmacro
 		let cont = context(ctx);
-		ctx.macros[name] = ctx.scope[name] = function() {
-			Array.prototype.map.call(arguments, function(_,i) {
-				cont.scope[args[i]] = arguments[i];
-			});
-			return interpret(body.map(e=>interpret(e,cont)), cont);
+		if (method===interpret) {
+			ctx.macros[name] = ctx.scope[name] = function() {
+				let [margs, mctx, mmethod] = arguments;
+				Array.prototype.map.call(margs, function(_,i) {
+					cont.scope[args[i]] = margs[i];
+				});
+				// this is (list (quote def) v 2);
+				// console.log(body);
+				// it should be (def foo 2)
+				// this is (((quote def) foo 2))
+				console.log(interpret(body, cont));
+				return interpret(body, cont);
+			}
 		}
 	};
 	// so...can I answer coherently why "(list + 1 1)" returns (<function> 1 1)?
