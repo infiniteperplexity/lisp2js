@@ -15,15 +15,6 @@ let Lisp = {};
 
 Lisp = (function(Lisp) {
 
-	let DEBUG = true;
-	//let DEBUG = false;
-
-	function debug() {
-		if (DEBUG) {
-			console.log(...arguments);
-		}
-	}
-
 	// **************** Lexxing and Parsing ******************** //
 	let SPACER = "\u0000";
 	let SREGEX = new RegExp(SPACER,"g");
@@ -49,15 +40,15 @@ Lisp = (function(Lisp) {
 			// reinsert whitespace in quoted strings
 			splt[i] = splt[i].replace(SREGEX," ");
 		}
-		debug("tokenized:");
-		debug(splt);
+		console.log("tokenized:");
+		console.log(splt);
 		return splt;	
 	}
 
 	function nest(tokens, lst) {
 		// begin accumulating a list
 		if (lst===undefined) {
-			debug("building new list");
+			console.log("building new list");
 			return nest(tokens,[]);
 		} else {
 			let token = tokens.shift();
@@ -65,13 +56,7 @@ Lisp = (function(Lisp) {
 			if (token===undefined) {
 				//this returns only the last list, so you have to use progn
 				// eventually want to wrap with an implicit progn
-				//return lst.pop();
-				if (lst.length===1) {
-					return lst[0];
-				} else {
-					lst.unshift("do");
-					return lst;
-				}
+				return lst.pop();
 			// open parenthesis begins a new list
 			} else if (token==="(") {
 				lst.push(nest(tokens,[]));
@@ -88,6 +73,9 @@ Lisp = (function(Lisp) {
 	function atomize(token) {
 		if (!isNaN(parseFloat(token))) {
 			return parseFloat(token);
+		//// Is this line actually needed?
+		//} else if (token[0]==='"' && token.slice(-1)==='"') {
+		//	return token.slice(1,-1);
 		} else {
 			return token;
 		}
@@ -95,172 +83,125 @@ Lisp = (function(Lisp) {
 
 	function parse(input) {
 		let parsed = nest(tokenize(input));
-		debug("parsed:");
-		debug(parsed);
+		console.log("parsed:");
+		console.log(parsed);
 		return parsed;
 	}
 
+
 	// ******************** Interpreting and Transpiling ***************** //
-	function interpret(input, scp) {
-		scp = scp || core;
-		debug("interpreting " + JSON.stringify(input));
+	function interpret(input, ctx) {
+		console.log("interpreting...");
+		console.log(input);
+		ctx = ctx || core;
 		if (Array.isArray(input)) {
 			if (input.length===0) {
-				debug("interpreting an empty list");
-				// an empty list
 				return input;
 			}
 			let [head, ...tail] = input;
-			if (scp[head] instanceof Function && (scp[head].__special__ || scp[head].__macro__)) {
-				// macros and special forms
-				debug("interpreting special/macro "+head+"...");
-				debug("...on ["+JSON.stringify(tail)+"]");
-				return scp[head](tail, scp, interpret);
+			// special form
+			if (head in ctx.specials) {
+				//console.log("special form");
+				return ctx.scope[head](tail, ctx, interpret);
+			// macro identifier
+			} else if (head in ctx.macros) {
+				//console.log("macro");
+				return ctx.scope[head](tail, ctx, interpret);
 			} else {
-				// process list
-				debug("interpreting list " + JSON.stringify(input) + "...");
-				let list = input.map(function(element) {return interpret(element, scp);});
+			// process it as a list
+				let list = input.map(function(element) {return interpret(element, ctx);});
 				[head, ...tail] = list;
-				debug("...to "+JSON.stringify(list));
 				if (head instanceof Function) {
-					// any risk that this could be a macro or a special?
-					debug("interpreting anonymous function on "+JSON.stringify(tail)); 
-					if (head.__special || head.__macro__) {
-						alert("this thing happened!");
-						return head(tail, scp, interpret);
-					} else {
-						return head(...tail);
-					}
-				} else if (scp[head] instanceof Function) {
-					debug("interpreting named function "+head+" on "+JSON.stringify(tail)); 
-					return scp[head](...tail);
+					//console.log("anonymous function");
+					return head(...tail);
+				} else if (head in ctx.functions) {
+					//console.log("named function");
+					return ctx.functions[head](...tail);
 				} else if  (!(Array.isArray(head)) && tail.length>0) {
-					throw new TypeError(head + " is not callable.");
+					console.log("non-standard value " + head + " at head of list");
 				} else {
-					debug("interpreting list recursively - appopriate?");
-					// recursing further...is this appropriate?
+					//console.log("recursing...");
 					return list;
 				}
 			}
-		// are these even allowed?
-		} else if (scp[input]!==undefined) {
-			// this seemed to work wrong...println went to null
-			debug("interpreting named value " + input);
-			// named value
-			return scp[input];
 		} else {
-			debug("interpreting primitive value " + input);
-			// primitive value
-			return input;
+			if (ctx.scope.hasOwnProperty(input)) {
+				//console.log("named value");
+				return ctx.scope[input];
+			} else {
+				//console.log("primitive value");
+				return input;
+			}
 		}
 	}
 
-	function transpile(input, scp) {
-		scp = scp || core;
-		debug("transpiling " + JSON.stringify(input));
+	function transpile(input, ctx) {
+		console.log("transpiling...");
+		console.log(input);
+		ctx = ctx || core;
 		if (Array.isArray(input)) {
 			if (input.length===0) {
-				debug("transpiling an empty list");
-				// empty list
-				return "[]";
+				console.log("empty array");
+				return input;
 			}
 			let [head, ...tail] = input;
-			// map reserved names
-			if (scp[head]!==undefined && scp[head].__reserved__) {
-				debug("transpiling " + head + " to " + scp[head].__reserved__);
-			}
-			head = (scp[head]!==undefined && scp[head].__reserved__) ? scp[head].__reserved__ : head;
-			if (scp[head] instanceof Function && (scp[head].__special__ || scp[head].__macro__)) {
-				// macros and special forms
-				console.log("transpiling special/macro "+head+"...");
-				console.log("...on ["+JSON.stringify(tail)+"]");
-				debug("transpiling special/macro "+head+"...");
-				debug("...on ["+JSON.stringify(tail)+"]");
-				return scp[head](tail, scp, transpile);
+			head = (head in ctx.operators) ? ctx.operators[head] : head;
+			// special form
+			if (head in ctx.specials) {
+				console.log("special form");
+				return ctx.scope[head](tail, ctx, transpile);
+			// macro identifier
+			} else if (head in ctx.macros) {
+				console.log("macro");
+				return ctx.scope[head](tail, ctx, transpile);
 			} else if (input.length>1) {
-				// process list
-				debug("transpiling list " + JSON.stringify(input) + "...");
-				let list = input.map(function(element) {return transpile(element, scp);});
-				[head, ...tail] = list;
-				debug("...to "+JSON.stringify(list));
-				// map reserved names
-				if (scp[head].__reserved__) {
-					debug("transpiling " + head + " to " + scp[head].__reserved__);
-				}
-				head = (scp[head]!==undefined && scp[head].__reserved__) ? scp[head].__reserved__ : head;
+			// process it as a list
+				console.log("as list");
+				let list = [head, ...tail] = input.map(function(element) {return transpile(element, ctx);});
+				head = (head in ctx.operators) ? ctx.operators[head] : head;
 				return ["(",head,")("].concat(tail.join(SPACER+", "+SPACER).split(SPACER),")").join("");
 			} else {
 				// I don't think this is ever correct...
-				debug("debateable whether it's a good idea to return first list item..."+head);
+				console.log("head");
 				return head;
 			}
 		} else {
-			debug("transpiling primitive or named value " + input);
-			if (input==="false") {
-				debug("returning the string value false");
-			}
-			// may need to wrap strings in ""?
-			// primitive or named value
-			//return JSON.stringify(input)
+			console.log("thing itself");
 			return input;
 		}
 	}
+	//(quote (println 2))
 
-	function scope(parent) {
-		parent = parent || {};
-		return Object.create(parent);
+	function context(parent) {
+		let ctx = {};
+		if (parent===undefined) {
+			ctx.specials = {};
+			ctx.macros = {};
+			ctx.functions = {};
+			// operators are not special in Lisp but they are in JS
+			ctx.operators = {};
+			ctx.scope = {};	
+		} else {
+			ctx.specials = Object.create(parent.specials);
+			ctx.macros = Object.create(parent.macros);
+			ctx.functions = Object.create(parent.functions);
+			ctx.operators = Object.create(parent.operators);
+			ctx.scope = Object.create(parent.scope);
+		}
+		return ctx;
 	}
 
-	let core = scope();
+	let core = context();
 
 	// ************ API ***************** //
-	Lisp.core = core;
+	Lisp.core = core.scope;
 	Lisp.tokenize = tokenize;
 	Lisp.nest = nest; 
 	Lisp.parse = parse;
-	Lisp.eval = function(code) {
-		with (core) {
-			return eval(code);
-		}
-	};
-	Lisp.format4js = function(code) {
-		if (typeof(code)==="string") {
-			return code+";";
-		} else {
-			let stringified = JSON.stringify(code);
-			if (stringified===undefined) {
-				return "null";
-			}
-			let nodoubles = stringified.replace(/""/g,SPACER);
-			let noquotes = nodoubles.replace(/"/g,"");
-			let formatted = noquotes.replace(SREGEX,'"');
-			return formatted;
-		}
-	};
 	Lisp.interpret = interpret;
 	Lisp.transpile = transpile;
 	console.log("Lisp core:");
 	console.log(core);
-
-	//(quote ((quote (1 2)) (quote (3 4))))
-	//(do (println 1) (println 2))
-	//(do (defmacro twoify (v) (list (quote def) v 2)) (twoify foo) (println foo))
-// (defmacro our-expander (name) ‘(get ,name ’expander))
-
-// (defmacro our-defmacro (name parms &body body)
-// 	(let ((g (gensym)))
-// 		‘(progn
-// 			(setf (our-expander ’,name)
-// 				#’(lambda (,g)
-// 					(block ,name
-// 						(destructuring-bind ,parms (cdr ,g)
-// 							,@body))))
-// 			’,name)))
-
-// (defun our-macroexpand-1 (expr)
-// 	(if (and (consp expr) (our-expander (car expr)))
-// 		(funcall (our-expander (car expr)) expr)
-		// expr))
 
 	function output() {
 		console.log("Output:");
@@ -277,108 +218,106 @@ Lisp = (function(Lisp) {
 		}
 	};
 
-	core.println = function() {
+	core.functions.println = function() {
 		Lisp.output(...arguments);
 		return null;
 	};
 
 	// ******************* Primitives ********************** //
 
-	core.true = true;
-	core.false = false;
-	core.null = null;
+	core.scope.true = true;
+	core.scope.false = false;
 
 
 	// ******************* Special Forms ******************** //
-	let specials = {};
 
-	specials.progn = function(args, scp, method) {
+	core.specials.progn = function(args, ctx, method) {
 		method = method || interpret || transpile;
 		let [head, ...rest] = args;
 		if (method===interpret) {
 			if (rest.length===0) {
-				return interpret(head, scp);
+				return interpret(head, ctx);
 			} else {
-				interpret(head, scp);
-				return specials.progn(rest, scp, interpret);
+				interpret(head);
+				return progn(rest, ctx, interpret);
 				
 			}
 		} else {
 			if (rest.length===0) {
-				return transpile(head, scp);
+				return transpile(head, ctx);
 			} else {
-				return transpile(head, scp)+";\n"+specials.progn(rest, scp, transpile);
+				return transpile(head, ctx)+";\n"+progn(rest, ctx, transpile);
 			}
 		}
 	};
 
-	specials.lambda = function([args, body], scp, method) {
+	core.specials.lambda = function([args, body], ctx, method) {
 		method = method || interpret || transpile;
 		return (method===interpret) ?
 			(function() {
-				let fscp= context(scp);
+				let cont = context(ctx);
 				Array.prototype.map.call(arguments,function(_,i) {
 					// should this interpret?
-					fscp.scope[args[i]]=arguments[i];
+					cont.scope[args[i]]=arguments[i];
 				});
-				return interpret(body, fscp);
+				return interpret(body, cont);
 			}) :
-			`(function(${args.map(arg => transpile(arg, scp)).join(",")}) {
-				return ${transpile(body,scp)};})`;
+			`(function(${args.map(arg => transpile(arg, ctx)).join(",")}) {
+				return ${transpile(body,ctx)};})`;
 	};
 
-	specials.cond = function(clauses, scp, method) {
+	core.specials.cond = function(clauses, ctx, method) {
 		method = method || interpret || transpile;
 		let err = "You can't handle the truth!";
 		if (clauses.length===0) {
 			return (method===interpret) ? (new Error(err)) : `(new Error("${err}"))`;
 		} else {
 			let [[head, tail], ...rest] = clauses;
-			return (method===interpret) ?
-				interpret(head, scp) ?
-					interpret(tail, scp) :
-					specials.cond(rest, scp, interpret) :
-				`((${transpile(head, scp)}) ?
-					${transpile(tail, scp)} :
-					${specials.cond(rest, scp, transpile)})`;
+			if (method===interpret) {
+				return interpret(head, ctx) ?
+					interpret(tail, ctx) :
+					cond(rest, ctx, method);
+			} else {
+				return `((${transpile(head, ctx)}) ?
+					${transpile(tail, ctx)} :
+					${cond(rest, ctx, method)})`
+				;
+			}
 		}
 	};
 
-	specials.if = function(lst, scp, method) {
+	core.specials.if = function(lst, ctx, method) {
 		method = method || interpret || transpile;
 		let [test, body, fallback] = lst;
 		return (method===interpret) ?
-			(interpret(test, scp)) ?
-				interpret(body, scp) :
-				interpret(fallback, scp) :
-			`((${transpile(test, scp)}) ?
-				${transpile(body, scp)} :
-				${transpile(fallback, scp)})`;
+			(interpret(test, ctx)) ?
+				interpret(body, ctx) :
+				interpret(fallback, ctx) :
+			`((${transpile(test, ctx)}) ?
+				${transpile(body, ctx)} :
+				${transpile(fallback, ctx)})`;
 	};
 
-	specials.quote = function([arg], scp, method) {
+	function rquotify(lst) {
+		if (Array.isArray(lst)) {
+			return "["+lst.map(rquotify)+"]";
+		} else if (typeof(lst)==="string") {
+			return '"'+lst+'"';
+		} else {
+			return lst;
+		}
+	}
+	core.specials.quote = function(lst, ctx, method) {
 		method = method || interpet || transpile;
-		return (method===interpret) ?
-			arg :
-			// be careful with this one..
-			arg
-		;
+		let first = [lst[0]];
+		// two issues...
+		// first, we need to wrap the transpiled stuff in ()
+		// second...do we need to recursively add ""?  Yes we do.
+		first = (method===transpile && Array.isArray(first)) ? [first] : first;
+		return (method===interpret) ? first : rquotify(first);
 	};
 
-	specials.and = function(lst, scp, method) {
-		method = method || interpet || transpile;
-		let [head, ...tail] = lst;
-		return (method===interpret) ?
-			(!head) ?
-				false :
-				(tail.length===0) ?
-					head :
-					core.specials.and(tail, scp, interpret) :
-			"("+lst.map(function(e) {return transpile(e,scp);}).join("&&")+")"
-		;
-	};
-
-	specials.or = function(lst, scp, method) {
+	core.specials.and = function(lst, ctx, method) {
 		method = method || interpet || transpile;
 		let [head, ...tail] = lst;
 		return (method===interpret) ?
@@ -386,87 +325,96 @@ Lisp = (function(Lisp) {
 				false :
 				(tail.length===0) ?
 					head :
-					core.specials.and(tail, scp, interpret) :
-			"("+lst.map(function(e) {return transpile(e,scp);}).join("||")+")"
+					core.specials.and(tail, ctx, interpret) :
+			"("+lst.map(function(e) {return transpile(e,ctx);}).join("&&")+")"
 		;
 	};
 
-	specials.def = function(lst, scp, method) {
+	core.specials.or = function(lst, ctx, method) {
+		method = method || interpet || transpile;
+		let [head, ...tail] = lst;
+		return (method===interpret) ?
+			(!head) ?
+				false :
+				(tail.length===0) ?
+					head :
+					core.specials.and(tail, ctx, interpret) :
+			"("+lst.map(function(e) {return transpile(e,ctx);}).join("||")+")"
+		;
+	};
+
+	core.specials.def = function(lst, ctx, method) {
 		method = method || interpet || transpile;
 		let [name, val] = lst;
 		if (method===interpret) {
-			scp[name] = interpret(val, scp);
+			ctx.scope[name] = interpret(val, ctx);
 			// huh...if it's a function, I could test that and add it to functions...
 			// ...but that seems like the wrong approach...
 			return name;
 		} else {
 			// oh dear...can the return value translate?
-			return `let ${name} = ${transpile(val, scp)}`;
+			return `let ${name} = ${transpile(val, ctx)}`;
 		}
 	};
 
 
-	specials.let = function(lst, scp, method) {
+	core.specials.let = function(lst, ctx, method) {
 		method = method || interpet || transpile;
 		let [bindings, ...tail] = lst;
-		let lscp = scope(scp);
+		let cont = context(ctx);
 		if (method===interpret) {
 			for (let i=0; i<bindings.length; i+=2) {
-				lscp[bindings[i]] = interpret(bindings[i+1], scp);
+				cont.scope[bindings[i]] = interpret(bindings[i+1], ctx);
 			}
 			return interpret(tail, cont);
 		} else {
 			return (`(function() {
 				${bindings.reduce((acc,val,i,arr) => {
 					if (i%2===0) {
-						acc.push(`	let ${val}=${transpile(arr[i+1],scp)};`);	
+						acc.push(`	let ${val}=${transpile(arr[i+1],ctx)};`);	
 					}
 					return acc;
 				},[]).join("\n")}
 				${tail.map(
-					(e,i,a) => (i===a.length-1) ? "	return " + transpile(e, scp) : "")
+					(e,i,a) => (i===a.length-1) ? "	return " + transpile(e, ctx) : "")
 				}})();`);
 		}
 	}
 
-
-// this syntax works correctly when converted to Clojure
-//(do (defmacro twoify (v) (list (quote def) v 2)) (twoify foo) (println foo))
-//(do (defmacro twoify (v) (list (quote def) v 2)) (twoify foo))
-// This is Paul Graham's suggested syntax
-// (defmacro our-expander (name) ‘(get ,name ’expander))
-
-// (defmacro our-defmacro (name parms &body body)
-// 	(let ((g (gensym)))
-// 		‘(progn
-// 			(setf (our-expander ’,name)
-// 				#’(lambda (,g)
-// 					(block ,name
-// 						(destructuring-bind ,parms (cdr ,g)
-// 							,@body))))
-// 			’,name)))
-
-// (defun our-macroexpand-1 (expr)
-// 	(if (and (consp expr) (our-expander (car expr)))
-// 		(funcall (our-expander (car expr)) expr)
-		// expr))
-	specials.defmacro = function(lst, scp, method) {
+	//(progn (defmacro twoify (v) (list (quote def) v 2)) (twoify foo) (foo))
+	// core.macros.falsify = function(lst, ctx, method) {
+	// 	interpret([def, lst[0], false]);
+	// this feels like it's getting close, but it's slightly off...
+	// is it possible that it's just quote that doesn't work right?
+	// a macro is a lisp function that returns expressions
+	core.specials.defmacro = function(lst, ctx, method) {
 		method = method || interpet || transpile;
-		let [name, args, body] = lst;
-		let mscp = scope(scp);
-		let macro = (function() {
-			let [margs, mscp, mmethod] = arguments;
-			Array.prototype.map.call(margs, function(_,i) {
-				mscp[args[i]] = margs[i];
-			});
-			return (mmethod===interpret) ?
-				interpret(interpret(body, mscp)) :
-				transpile(interpret(body, mscp));
-		});
-		scp[name] = macro;
-		macro.__macro__ = true;
-		return (method===interpret) ? macro : name + "; // macro definition";
+		let [name, args, ...body] = lst;
+		// args are the arguments specified in defmacro
+		let cont = context(ctx);
+		if (method===interpret) {
+			ctx.macros[name] = ctx.scope[name] = function() {
+				let [margs, mctx, mmethod] = arguments;
+				Array.prototype.map.call(margs, function(_,i) {
+					cont.scope[args[i]] = margs[i];
+				});
+				// this is (list (quote def) v 2);
+				// console.log(body);
+				// it should be (def foo 2)
+				// this is (((quote def) foo 2))
+				console.log(interpret(body, cont));
+				return interpret(body, cont);
+			}
+		} else {
+		// hold on...do we actually need a "transpile" version of this guy?
+			console.log("lookie here!");
+			console.log(transpile(transpile(body, cont), cont));
+		}
 	};
+	// `(function(${args.map(arg => transpile(arg, ctx)).join(",")}) {
+	// 			return ${transpile(body,ctx)};})`;
+	// };
+
 
 	// so...can I answer coherently why "(list + 1 1)" returns (<function> 1 1)?
 	// actually maybe I can...is it because lists passed as arguments aren't interpreted, but items are?
@@ -491,7 +439,7 @@ Lisp = (function(Lisp) {
 	
 	// *********** Core Functions ************************ //
 
-	core.cons = function(a, b) {
+	core.functions.cons = function(a, b) {
 		if (!Array.isArray(b)) {
 			console.log(lst);
 			throw new TypeError("cons used on non-list");
@@ -499,7 +447,7 @@ Lisp = (function(Lisp) {
 		return [a].concat(b);
 	};
 
-	core.car = function(lst) {
+	core.functions.car = function(lst) {
 		if (!Array.isArray(lst)  ) {
 			console.log(lst);
 			throw new TypeError("car used on non-list");
@@ -510,7 +458,7 @@ Lisp = (function(Lisp) {
 		}
 	};
 
-	core.cdr = function(lst) {
+	core.functions.cdr = function(lst) {
 		if (!Array.isArray(lst)  ) {
 			console.log(lst);
 			throw new TypeError("cdr used on non-list");
@@ -521,43 +469,26 @@ Lisp = (function(Lisp) {
 		}
 	};
 
-	core.list = function() {
+	core.functions.list = function() {
 		return Array.from(arguments);
 	};
 
-	core.atom = function(a) {
+	core.functions.atom = function(a) {
 		return Array.isArray(a);
 	};
 
-	core.eq = function(a, b) {
+	core.functions.eq = function(a, b) {
 		return (a===b);
 	};
 
-	core.not = function(a) {
+	core.functions.not = function(a) {
 		return !a;
 	};
 
-	core.Y = f => (x => x(x))(x => f(y => x(x)(y)));
-
-	// ******************* Math *********************** //
-
-	core.inc = function(a) {
-		return a+1;
-	}
-
-	core.dec = function(a) {
-		return a-1;
-	}
+	core.functions.Y = f => (x => x(x))(x => f(y => x(x)(y)));
 
 
-	// ********************** Populate core namespace ***************** //
-	for (let s in specials) {
-		core[s] = specials[s];
-		core[s].__special__ = true;
-		core[s].__name__ = "<core.special."+s+">";
-	}
-
-	// *********************** Handle JS operators and JS reserved words ******************** //
+	// *********************** Operators ******************************* //
 
 	let mathematical = {
 		_PLUS_ : "+",
@@ -577,8 +508,8 @@ Lisp = (function(Lisp) {
 				return(eval("oper(...args)"+ops[op]+"last;"));
 			}
 		}
-		core[ops[op]] = core[op] = oper;
-		oper.__reserved__ = op;
+		core.functions[op] = oper;
+		core.operators[ops[op]] = op;
 	}
 
 	let comparison = {
@@ -602,8 +533,8 @@ Lisp = (function(Lisp) {
 				return eval("(head"+ops[op]+"tail[0]) && oper(...tail);")
 			}
 		}
-		core[ops[op]] = core[op] = oper;
-		oper.__reserved__ = op;
+		core.functions[op] = oper;
+		core.operators[ops[op]] = op;
 	}
 
 	// functions defined with ordinary names
@@ -613,14 +544,12 @@ Lisp = (function(Lisp) {
 		or : "||",
 		not : "!",
 		inc: "++",
-		dec: "--",
-		progn: "do"
+		dec: "--"
 	};
 
 	for (let op in others) {
 		let ops = others;
-		core[ops[op]] = core[op];
-		core[op].__reserved__ = op;
+		core.operators[ops[op]] = op;
 	}
 
 	// JS operators not used in this implementation
@@ -638,6 +567,21 @@ Lisp = (function(Lisp) {
 		"<<",
 		">>"
 	];
+
+	// ********************** Populate core namespace ***************** //
+	for (let s of ["specials","macros","functions"]) {
+		for (let form in core[s]) {
+			core.scope[form] = core[s][form];
+		}
+	}
+	for (let operator in core.operators) {
+		//core.scope[operator] = core.operators[operator];
+		for (let s of ["specials","macros","functions"]) {
+			if (core.operators[operator] in core[s]) {
+				core.scope[operator] = core[s][operator] = core[s][core.operators[operator]];
+			}
+		}
+	}
 
 	return Lisp;
 })(Lisp);

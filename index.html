@@ -22,7 +22,7 @@
 		</td>
 		<td>
 			<textarea id="lisp" type="text" style="width:250px;height:500px;">
-			(cond (false (println "goodbye world.")) (true (println("hello world!"))))
+(do (defmacro twoify (v) (list (quote def) v 2)) (twoify foo) (println foo))
 			</textarea>
 		</td>
 		<td>
@@ -50,14 +50,9 @@
 	<script src="lisp2js.js"></script>
 	<script src="sugar.js"></script>
 	<script>
-		for (n in Lisp.core) {
-			if (window[n]===undefined) {
-				window[n] = Lisp.core[n];
-				// does this fail silently for operators?
-			} else {
-				alert("Warning: " + n + " already defined!");
-			}
-		}
+
+
+
 
 		function sugar() {
 			// let lisp = document.getElementById("pre").value;
@@ -75,21 +70,32 @@
 				rslts = rslts + arguments[0] + "\n";
 			}
 			Lisp.bindOutput(f);
-			let interpreted = Lisp.interpret(parsed);
-			rslts+=interpreted;
+			let interpreted = Lisp.format4js(Lisp.interpret(parsed));
+			for (let line of interpreted) {
+				rslts+=line;
+			}
 			document.getElementById("lout").value = rslts;
 			let TRANSPILE = true;
+			//let TRANSPILE = false;
 			if (TRANSPILE) {
-				let transpiled = Lisp.transpile(parsed)+";";
+				let transpiled = Lisp.format4js(Lisp.transpile(parsed));
 				document.getElementById("js").value = transpiled;
+				let code = document.getElementById("js").value;
 				let txt = "";
-				function println(line) {
+				let g = function(line) {
 					txt = txt + line + "\n";
 					console.log(line);
 				}
-				let code = document.getElementById("js").value;
-				let result = eval(code);
-				txt = txt + String(result);
+				Lisp.bindOutput(g);
+				let result = Lisp.eval(code);
+				console.log(result);
+				txt = txt + JSON.stringify(result, (k,v) => {
+					if (v instanceof Function) {
+						return v.__name__;
+					} else {
+						return v;
+					}
+				});
 				document.getElementById("jsout").value = txt;
 			}	
 		}
