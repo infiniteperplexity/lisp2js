@@ -297,9 +297,23 @@ Lisp = (function(Lisp) {
 				${transpile(fallback, ctx)})`;
 	};
 
+	function rquotify(lst) {
+		if (Array.isArray(lst)) {
+			return "["+lst.map(rquotify)+"]";
+		} else if (typeof(lst)==="string") {
+			return '"'+lst+'"';
+		} else {
+			return lst;
+		}
+	}
 	core.specials.quote = function(lst, ctx, method) {
 		method = method || interpet || transpile;
-		return (method===interpret) ? lst[0] : (typeof(lst[0])==="string")?('"'+e+'"'):e]}`;
+		let first = [lst[0]];
+		// two issues...
+		// first, we need to wrap the transpiled stuff in ()
+		// second...do we need to recursively add ""?  Yes we do.
+		first = (method===transpile && Array.isArray(first)) ? [first] : first;
+		return (method===interpret) ? first : rquotify(first);
 	};
 
 	core.specials.and = function(lst, ctx, method) {
@@ -390,8 +404,17 @@ Lisp = (function(Lisp) {
 				console.log(interpret(body, cont));
 				return interpret(body, cont);
 			}
+		} else {
+		// hold on...do we actually need a "transpile" version of this guy?
+			console.log("lookie here!");
+			console.log(transpile(transpile(body, cont), cont));
 		}
 	};
+	// `(function(${args.map(arg => transpile(arg, ctx)).join(",")}) {
+	// 			return ${transpile(body,ctx)};})`;
+	// };
+
+
 	// so...can I answer coherently why "(list + 1 1)" returns (<function> 1 1)?
 	// actually maybe I can...is it because lists passed as arguments aren't interpreted, but items are?
 	// '(a b c) = (list 'a 'b 'c)
