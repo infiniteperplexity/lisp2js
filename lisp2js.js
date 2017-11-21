@@ -25,33 +25,166 @@ Lisp = (function(Lisp) {
 	}
 
 	// **************** Lexxing and Parsing ******************** //
+
+	// must begin with letter, _, or $
+	// _ and $ are allowed and have no special meanings
+	// digits are allowed but not at the beginning
+
+	function lex(input) {
+		let tokens = [];
+		let token = [];
+		let state = "WHITE";
+		let operations = {
+			// finish this token and begin the next one
+			next: function(char, s) {
+				if (token.length>0) {
+					tokens.push(token.join(""));
+				}
+				token = [char];
+				state = s;
+			},
+			// this doesn't provide a good way to ignore comments
+			ignore: function(char, s) {
+				// ignore the character
+				token = [];
+				state = s;
+			},
+			append: function(char, s) {
+				// continue building this token
+				token.push(char);
+				state = s;
+			},
+			close: function(char, s) {
+				// finish this token and revert to WHITE
+				token.push(char);
+				if (token.length>0) {
+					tokens.push(token.join(""));
+				}
+				token = [];
+				state = "WHITE";
+			},
+			end: function(char, s) {
+				// finish this token and revert to WHITE
+				if (token.length>0) {
+					tokens.push(token.join(""));
+				}
+				token = [];
+				state = "WHITE";
+			}
+		};
+		let table = {
+			WHITE: {
+				match: /\s/,
+				next: ["NAME1", "NUMBER", "DOT", "QUOTE", "SYMBOL", "BRACE"],
+				end: ["WHITE"]
+			},
+			NUMBER: {
+				match: /[0-9]/,
+				append: ["NUMBER", "DOT"],
+				next: ["BRACE"],
+				end: ["WHITE"]
+			},
+			DECIMAL: {
+				match: /[0-9]/,
+				append: ["DECIMAL"],
+				next: ["BRACE"],
+				end: ["WHITE"]
+			},
+			NAME1: {
+				match: /[A-Za-z$_]/,
+				append: ["NAME"],
+				next: ["BRACE"],
+				end: ["WHITE"]
+			},
+			NAME: {
+				match: /[A-Za-z0-9_]/,
+				append: ["NAME"],
+				next: ["BRACE"],
+				end: ["WHITE"]
+			},
+			DOT: {
+				match: /\./,
+				append: ["DECIMAL"],
+				next: ["BRACE"],
+				end: ["WHITE"]
+			},
+			SYMBOL: {
+				match: /[\+\*\/-\|&,]/,
+				append: ["SYMBOL"],
+				next: ["BRACE"],
+				end: ["WHITE"]
+			},
+			BRACE: {
+				match: /[()\[\]\{\}]/,
+				next: ["BRACE","NAME1","NUMBER","SYMBOL"],
+				end: ["WHITE"]
+			},
+			QUOTE: {
+				match: /"/,
+				append: ["STRING"],
+				close: ["QUOTE"]
+			},
+			STRING: {
+				match: /[^"]/,
+				append: ["STRING"],
+				close: ["QUOTE"]
+			}
+		};
+		let loop = function(input, i) {
+			if (i>=input.length) {
+				operations.next("",state);
+				return tokens;
+			}
+			let char = input[i];
+			let pattern = table[state];
+			for (let func in pattern) {
+				if (func!=="match") {
+					for (let match of pattern[func]) {
+						if (char.match(table[match].match)) {
+							operations[func](char, match);
+							return loop(input,i+1);
+						} 
+					}
+				}
+			}
+			throw new SyntaxError("invalid character '"+char+"' for read state "+state);
+		};
+		loop(input, 0);
+		return tokens;
+	}
+
+	Lisp.lex = lex;
 	let SPACER = "\u0000";
 	let SREGEX = new RegExp(SPACER,"g");
+	// function tokenize(input) {
+	// 	//let flag quoted strings	
+	// 	let quotes = input.replace(/\"/g,SPACER);
+	// 	let qts = quotes.split(SPACER);
+	// 	for (let i=0; i<qts.length; i++) {
+	// 		if (i%2===1) {
+	// 			// swap whitespace in quotes strings
+	// 			qts[i] = qts[i].replace(/\s/g,SPACER);			
+	// 		}
+	// 	}
+	// 	let replaced = qts.join('"');
+	// 	// pad parentheses with spaces
+	// 	let lpars = replaced.replace(/\(/g," ( ");
+	// 	let rpars = lpars.replace(/\)/g," ) ");
+	// 	// trim the edges
+	// 	let trm = rpars.trim();
+	// 	// split on whitespace
+	// 	let splt = trm.split(/\s+/);
+	// 	for (let i=0; i<splt.length; i++) {
+	// 		// reinsert whitespace in quoted strings
+	// 		splt[i] = splt[i].replace(SREGEX," ");
+	// 	}
+	// 	debug("tokenized:");
+	// 	debug(splt);
+	// 	return splt;	
+	// }
+
 	function tokenize(input) {
-		//let flag quoted strings	
-		let quotes = input.replace(/\"/g,SPACER);
-		let qts = quotes.split(SPACER);
-		for (let i=0; i<qts.length; i++) {
-			if (i%2===1) {
-				// swap whitespace in quotes strings
-				qts[i] = qts[i].replace(/\s/g,SPACER);			
-			}
-		}
-		let replaced = qts.join('"');
-		// pad parentheses with spaces
-		let lpars = replaced.replace(/\(/g," ( ");
-		let rpars = lpars.replace(/\)/g," ) ");
-		// trim the edges
-		let trm = rpars.trim();
-		// split on whitespace
-		let splt = trm.split(/\s+/);
-		for (let i=0; i<splt.length; i++) {
-			// reinsert whitespace in quoted strings
-			splt[i] = splt[i].replace(SREGEX," ");
-		}
-		debug("tokenized:");
-		debug(splt);
-		return splt;	
+		return lex(input);
 	}
 
 	function nest(tokens, lst) {
