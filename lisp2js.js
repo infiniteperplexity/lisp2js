@@ -1,14 +1,82 @@
 /*
 Issues:
-	- Not sure if it parses strings correctly in general
-	- Can't handle special whitespace in quoted strings
-	- How should we handle multi-line input?
-	- The final JS output shows the full text of any unevaluated functions
-	- Can't figure out a way to handle the return value of "def" in the transpiler
+- Can't figure out a way to handle the return value of "def" in the transpiler
+x = eval("let y = 7; y;") doesn't work
+x = eval("var y = 7; y;") works but works wrong in macros
 
-Features:
-	- anything else used in the chapter
-	- reader macros?
+
+Here is an example context-free grammar that describes all two-letter strings containing the letters α {\displaystyle \alpha } \alpha and β {\displaystyle \beta } \beta .
+
+S   →   A A
+
+A   →   α
+
+A   →   β
+
+So I think the AST in this case is just...Lisp code.
+So the output specification is, like, done.
+
+What are my proposed rules?
+- infixing: 
+	If there are any operators in a list, that list is transpiled from infix to prefix.
+- functions outside parentheses.
+	If a name or primitive is immediately followed by a list - no white space between
+		then we replace that pair with a list with the value inside.
+- line break grouping.
+	This is a tough one, and perhaps poorly defined...hmmm...ideas?
+		- {...} maps to (do ...)?
+		- ...; maps to (...)?
+
+- control structure macros...also a tough one...yeah this may be a deal-breaker...
+	value (...) {___} maps to (value (...) (___))
+
+
+	do {} while ()
+	while () {}
+	with () {}
+
+	if () {} else {} else {} else {}
+
+	try {} catch () {}
+
+	for () {}
+
+	I don't see a way to map try/catch or do/while
+
+	so...how about...
+
+	A (1) {2} B {3} C {4} maps to (A (1) (2) (B 3) (C 4))
+
+	is there a way to omit the parentheses?
+
+	A 1 {2} B {3} C {4} maps to (A (1) (2) (B 3) (C 4))
+
+	is this compatible with also using {} for dicts?
+
+	a = {A:1} would map to (a (=) {A:1})...although = is an operator...
+	...so I guess it maps to (= (a) {A:1}) which is better...but the problem is that's going to set things to the result of the block.
+	So here's an idea...{: a:1, b:2, c:3}...let's see if we can avoid that.
+	so...does {} always return a namespace?
+	(defn a (args) (stuff))
+	make : an operator and if that's the first operator in {}?  Not so good...actually, commonly violated.
+	...what about using "tables" fron Lua?  [] and stuff...
+
+
+
+
+	(A, B, C) maps to (A B C)
+	(A B C) maps to (B A C)
+	x = 5 + 3 - 1 -> (= x (+ 5 (- 3 1)))
+	egh...need to know operator precedence...
+	...so we need to have built-in operators, with precedence assigned to symbols.  This seems acceptable,
+	so long as there are lots of them.
+
+	wait...(! A) maps to (A !)...no good.  So...a detailed set of rules that lets the operators rearrange themselves.
+
+	A
+	B
+	C
+	maps to A B C
 */
 
 let Lisp = {};
@@ -29,11 +97,180 @@ Lisp = (function(Lisp) {
 	// must begin with letter, _, or $
 	// _ and $ are allowed and have no special meanings
 	// digits are allowed but not at the beginning
+	let lispLexTable ={
+		NULL: {
+			match: null,
+			next: ["NAME1", "NUMBER", "DOT", "QUOTE", "SYMBOL", "BRACE"],
+			end: ["WHITE"]
+		},
+		WHITE: {
+			match: /\s/,
+			next: ["NAME1", "NUMBER", "DOT", "QUOTE", "SYMBOL", "BRACE"],
+			end: ["WHITE"]
+		},
+		NUMBER: {
+			match: /[0-9]/,
+			append: ["NUMBER", "DOT"],
+			next: ["BRACE"],
+			end: ["WHITE"]
+		},
+		DECIMAL: {
+			match: /[0-9]/,
+			append: ["DECIMAL"],
+			next: ["BRACE"],
+			end: ["WHITE"]
+		},
+		NAME1: {
+			match: /[A-Za-z$_]/,
+			append: ["NAME"],
+			next: ["BRACE"],
+			end: ["WHITE"]
+		},
+		NAME: {
+			match: /[A-Za-z0-9_]/,
+			append: ["NAME"],
+			next: ["BRACE"],
+			end: ["WHITE"]
+		},
+		DOT: {
+			match: /\./,
+			append: ["DECIMAL"],
+			next: ["BRACE"],
+			end: ["WHITE"]
+		},
+		SYMBOL: {
+			match: /[\+\*\/-\|&,]/,
+			append: ["SYMBOL"],
+			next: ["BRACE"],
+			end: ["WHITE"]
+		},
+		BRACE: {
+			match: /[()\[\]\{\}]/,
+			next: ["BRACE","NAME1","NUMBER","SYMBOL"],
+			end: ["WHITE"]
+		},
+		QUOTE: {
+			match: /"/,
+			append: ["STRING"],
+			close: ["QUOTE"]
+		},
+		STRING: {
+			match: /[^"]/,
+			append: ["STRING"],
+			close: ["QUOTE"]
+		}
+	};
 
-	function lex(input) {
+
+	let anotherLexTable = {
+		NULL: {
+			match: null,
+			next: ["NAME1", "NUMBER", "DOT", "QUOTE", "SYMBOL", "BRACE","NEWLINE"],
+			end: ["WHITE"]
+		},
+		NEWLINE: {
+			match: /[\n,;]/,
+			next: ["NAME1", "NUMBER", "DOT", "QUOTE", "SYMBOL", "BRACE","NEWLINE"],
+			end: ["WHITE"]
+		},
+		WHITE: {
+			match: /\s/,
+			next: ["NAME1", "NUMBER", "DOT", "QUOTE", "SYMBOL", "BRACE","NEWLINE"],
+			end: ["WHITE"]
+		},
+		NUMBER: {
+			match: /[0-9]/,
+			append: ["NUMBER", "DOT"],
+			next: ["BRACE","NEWLINE"],
+			end: ["WHITE"]
+		},
+		DECIMAL: {
+			match: /[0-9]/,
+			append: ["DECIMAL"],
+			next: ["BRACE","NEWLINE"],
+			end: ["WHITE"]
+		},
+		NAME1: {
+			match: /[A-Za-z$_]/,
+			append: ["NAME", "OPEN"],
+			next: ["BRACE","NEWLINE"],
+			end: ["WHITE"]
+		},
+		NAME: {
+			match: /[A-Za-z0-9_]/,
+			append: ["NAME","OPEN"],
+			next: ["BRACE"],
+			end: ["WHITE","NEWLINE"]
+		},
+		DOT: {
+			match: /\./,
+			append: ["DECIMAL"],
+			next: ["BRACE","NEWLINE","SYMBOL"],
+			end: ["WHITE"]
+		},
+		SYMBOL: {
+			match: /[\+\*\/-\|&,]/,
+			append: ["SYMBOL"],
+			next: ["BRACE","NEWLINE"],
+			end: ["WHITE"]
+		},
+		OPEN: {
+			match: /[()\[\{]/,
+			next: ["BRACE","NAME1","NUMBER","SYMBOL","NEWLINE"],
+			end: ["WHITE"]
+		},
+		BRACE: {
+			match: /[()\[\]\{\}]/,
+			next: ["BRACE","NAME1","NUMBER","SYMBOL","NEWLINE"],
+			end: ["WHITE"]
+		},
+		QUOTE: {
+			match: /"/,
+			append: ["STRING"],
+			close: ["QUOTE"]
+		},
+		STRING: {
+			match: /[^"]/,
+			append: ["STRING"],
+			close: ["QUOTE"]
+		},
+		SLASH: {
+			match: /\//,
+			append: ["SLASH2","ASTERISK"]
+		},
+		SLASH2: {
+			match: /\//,
+			append: ["COMMENT"],
+			end: ["NEWLINE"]
+		},
+		COMMENT: {
+			match: /[^[\n];]/,
+			append: ["COMMENT"],
+			end: ["NEWLINE"]
+		},
+		ASTERISK: {
+			match: /\*/,
+			append: ["ASTERISK2","BLOCKC"]
+		},
+		ASTERISK2: {
+			match: /\*/,
+			append: ["SLASH3","ASTERISK2","BLOCKC"]
+		},
+		SLASH3: {
+			match: /\//,
+			next: ["NAME1", "NUMBER", "DOT", "QUOTE", "SYMBOL", "BRACE","NEWLINE"],
+			end: ["WHITE"]
+		}
+		BLOCKC:
+			match: [/^\*/],
+			append: ["BLOCKC","ASTERISK2"],
+		}
+	};
+	function lex(input, table) {
+		table = table || lispLexTable;
 		let tokens = [];
 		let token = [];
-		let state = "WHITE";
+		let state = "NULL";
 		let operations = {
 			// finish this token and begin the next one
 			next: function(char, s) {
@@ -55,81 +292,24 @@ Lisp = (function(Lisp) {
 				state = s;
 			},
 			close: function(char, s) {
-				// finish this token and revert to WHITE
+				// finish this token and revert to NULL
 				token.push(char);
 				if (token.length>0) {
 					tokens.push(token.join(""));
 				}
 				token = [];
-				state = "WHITE";
+				state = "NULL";
 			},
 			end: function(char, s) {
-				// finish this token and revert to WHITE
+				// finish this token and revert to NULL
 				if (token.length>0) {
 					tokens.push(token.join(""));
 				}
 				token = [];
-				state = "WHITE";
+				state = "NULL";
 			}
 		};
-		let table = {
-			WHITE: {
-				match: /\s/,
-				next: ["NAME1", "NUMBER", "DOT", "QUOTE", "SYMBOL", "BRACE"],
-				end: ["WHITE"]
-			},
-			NUMBER: {
-				match: /[0-9]/,
-				append: ["NUMBER", "DOT"],
-				next: ["BRACE"],
-				end: ["WHITE"]
-			},
-			DECIMAL: {
-				match: /[0-9]/,
-				append: ["DECIMAL"],
-				next: ["BRACE"],
-				end: ["WHITE"]
-			},
-			NAME1: {
-				match: /[A-Za-z$_]/,
-				append: ["NAME"],
-				next: ["BRACE"],
-				end: ["WHITE"]
-			},
-			NAME: {
-				match: /[A-Za-z0-9_]/,
-				append: ["NAME"],
-				next: ["BRACE"],
-				end: ["WHITE"]
-			},
-			DOT: {
-				match: /\./,
-				append: ["DECIMAL"],
-				next: ["BRACE"],
-				end: ["WHITE"]
-			},
-			SYMBOL: {
-				match: /[\+\*\/-\|&,]/,
-				append: ["SYMBOL"],
-				next: ["BRACE"],
-				end: ["WHITE"]
-			},
-			BRACE: {
-				match: /[()\[\]\{\}]/,
-				next: ["BRACE","NAME1","NUMBER","SYMBOL"],
-				end: ["WHITE"]
-			},
-			QUOTE: {
-				match: /"/,
-				append: ["STRING"],
-				close: ["QUOTE"]
-			},
-			STRING: {
-				match: /[^"]/,
-				append: ["STRING"],
-				close: ["QUOTE"]
-			}
-		};
+
 		let loop = function(input, i) {
 			if (i>=input.length) {
 				operations.next("",state);
@@ -191,6 +371,94 @@ Lisp = (function(Lisp) {
 		// begin accumulating a list
 		if (lst===undefined) {
 			debug("building new list");
+			let sub = [];
+			sub.__nesting__ = null;
+			return nest(tokens,[]);
+		} else {
+			let token = tokens.shift();
+			// finish reading input
+			if (token===undefined) {
+				//this returns only the last list, so you have to use progn
+				// eventually want to wrap with an implicit progn
+				//return lst.pop();
+				if (lst.length===1) {
+					return lst[0];
+				} else {
+					lst.unshift("do");
+					return lst;
+				}
+			// open parenthesis begins a new list
+			} else if (["(","[","{"].indexOf(token)!==-1) {
+				let sub = [];
+				sub.__nesting__ = token;
+				lst.push(nest(tokens,sub));
+				return nest(tokens, lst);
+			// function begins new list of arguments
+			} else if (token.substr(-1)==="(") {
+				let sub = [token(substr(0,-1))];
+				sub.__nesting__ = "f(";
+				lst.push(nest(tokens,sub));
+				return nest(tokens, lst);
+				return nest(tokens, lst);
+			} else if (token===",") {
+				if (["(","[","f("].indexOf(lst.__nesting__)!==-1) {
+					// the first comma in each list
+					let prev = [];
+					prev.__nesting__ = ",";
+					while (lst.length>0) {
+						prev.push(lst.shift());
+					}
+					lst.push(prev)
+					let sub = [];
+					sub.__nesting__ = ",";
+					lst.push(nest(tokens, sub));
+					return nest(tokens, lst);
+				} else if (lst.__nesting__===",") {
+					// check for infix?
+					return lst;
+					// close up current and move to next
+				} else {
+					throw new Error("Shouldn't find a comma here.");
+				}
+			} else if (token==="\n" || token===";") {
+				if (["(", "[","f("].indexOf(lst.__nesting__)!==-1) {
+					// treat as white space
+					return nest(tokens, lst);
+				} else if ([null,"{"].indexOf(lst.__nesting__)!==-1) {
+					//
+					let prev = [];
+					prev.__nesting__ = ";";
+					while (lst.length>0) {
+						prev.push(lst.shift());
+					}
+					lst.push(prev);
+					let sub = [];
+					sub.__nesting__ = ";";
+					lst.push(nest(tokens, sub));
+					return nest(tokens, lst);
+				} else if (lst.__nesting__===";") {
+					// check for infix?
+					return lst;
+				}
+			} else if ([")","]","}"].indexOf(token)!==-1) {
+				// assume it is closed correctly for now?
+				// check for infix?
+				return lst;
+			} else {
+				//if (["+","-","*","/",].indexOf(token)) {
+					// only within , or ;?
+				//	lst.__infixed__ = true;
+				//}
+				return nest(tokens,lst.concat(atomize(token)));
+			}
+		}
+	}
+
+
+	function nest(tokens, lst) {
+		// begin accumulating a list
+		if (lst===undefined) {
+			debug("building new list");
 			return nest(tokens,[]);
 		} else {
 			let token = tokens.shift();
@@ -215,6 +483,26 @@ Lisp = (function(Lisp) {
 			} else {
 				return nest(tokens,lst.concat(atomize(token)));
 			}
+		}
+	}
+
+	// probably do this *after* parsing...right?
+	function prefixize(tokens) {
+		let order = ["*/","+-"];
+		let newl = [];
+		for (let op in order) {
+			for (let i=0; i<tokens.length; i++) {
+				if (op.match(tokens[i])) {
+					newl = [operators[op]];
+					newl.push(tokens.slice(0,i));
+					newl.push(tokens.slice(i));
+				}
+			}
+		}
+		if (newl.length===0) {
+			return lst;
+		} else {
+			return tokens;
 		}
 	}
 
@@ -513,6 +801,7 @@ Lisp = (function(Lisp) {
 		} else {
 			// oh dear...can the return value translate?
 			return `let ${name} = ${transpile(val, scp)}`;
+			//return `eval("var ${name} = ${transpile(val, scp)}; ${name};")`;
 		}
 	};
 
