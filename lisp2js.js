@@ -193,35 +193,35 @@ Lisp = (function(Lisp) {
 		NAME1: {
 			match: /[A-Za-z$_]/,
 			append: ["NAME", "OPEN"],
-			next: ["BRACE","NEWLINE"],
+			next: ["BRACE","NEWLINE","SYMBOL","DOT"],
 			end: ["WHITE"]
 		},
 		NAME: {
 			match: /[A-Za-z0-9_]/,
 			append: ["NAME","OPEN"],
-			next: ["BRACE"],
-			end: ["WHITE","NEWLINE"]
+			next: ["BRACE","SYMBOL","NEWLINE","DOT"],
+			end: ["WHITE"]
 		},
 		DOT: {
 			match: /\./,
 			append: ["DECIMAL"],
-			next: ["BRACE","NEWLINE","SYMBOL"],
+			next: ["BRACE","NEWLINE","NAME1","SYMBOL"],
 			end: ["WHITE"]
 		},
 		SYMBOL: {
-			match: /[\+\*\/-\|&,]/,
+			match: /[\+\*\/\-\=\>\<\&\|\,\!]/,
 			append: ["SYMBOL"],
-			next: ["BRACE","NEWLINE"],
+			next: ["BRACE","NEWLINE","NUMBER","NAME1"],
 			end: ["WHITE"]
 		},
 		OPEN: {
-			match: /[()\[\{]/,
-			next: ["BRACE","NAME1","NUMBER","SYMBOL","NEWLINE"],
+			match: /[(\[\{]/,
+			next: ["BRACE","NAME1","NUMBER","SYMBOL","NEWLINE","QUOTE"],
 			end: ["WHITE"]
 		},
 		BRACE: {
 			match: /[()\[\]\{\}]/,
-			next: ["BRACE","NAME1","NUMBER","SYMBOL","NEWLINE"],
+			next: ["BRACE","NAME1","NUMBER","SYMBOL","NEWLINE","QUOTE"],
 			end: ["WHITE"]
 		},
 		QUOTE: {
@@ -260,8 +260,8 @@ Lisp = (function(Lisp) {
 			match: /\//,
 			next: ["NAME1", "NUMBER", "DOT", "QUOTE", "SYMBOL", "BRACE","NEWLINE"],
 			end: ["WHITE"]
-		}
-		BLOCKC:
+		},
+		BLOCKC: {
 			match: [/^\*/],
 			append: ["BLOCKC","ASTERISK2"],
 		}
@@ -333,6 +333,137 @@ Lisp = (function(Lisp) {
 		return tokens;
 	}
 
+	let inText =
+`let x = 5;
+let f = function(x,y) {
+	return x + y;
+}
+let y = f(x,x);
+if (y>5) {
+	console.log("Hello world!");
+} else if (y<0) {
+	console.log("Goodbye world!");
+} else {
+	console.log("Whatever, world.");
+}`;
+/*
+
+
+*/
+
+
+/*
+
+[
+  [
+    "let",
+    "x",
+    "=",
+    5
+  ],
+  [],
+  "let",
+  "f",
+  "=",
+  [
+    [
+      "function",
+      "x"
+    ],
+    [
+      "y"
+    ],
+    [
+      [
+        [
+          [],
+          [
+            "return",
+            "x",
+            "+",
+            "y"
+          ]
+        ],
+        []
+      ],
+      [
+        "let",
+        "y",
+        "=",
+        [
+          [
+            "f",
+            "x"
+          ],
+          [
+            "x"
+          ],
+          "if",
+          [
+            "y",
+            ">",
+            5
+          ],
+          [
+            [
+              [],
+              [
+                "console",
+                ".",
+                [
+                  "log",
+                  "\"Hello world!\""
+                ]
+              ]
+            ],
+            [],
+            "else",
+            "if",
+            [
+              "y",
+              "<",
+              0
+            ],
+            [
+              [
+                [],
+                [
+                  "console",
+                  ".",
+                  [
+                    "log",
+                    "\"Goodbye world!\""
+                  ]
+                ]
+              ],
+              [],
+              "else",
+              [
+                [
+                  [],
+                  [
+                    "console",
+                    ".",
+                    [
+                      "log",
+                      "\"Whatever, world.\""
+                    ]
+                  ]
+                ],
+                []
+              ]
+            ]
+          ]
+        ]
+      ]
+    ]
+  ]
+]
+
+*/
+	let lexed = lex(inText,anotherLexTable);
+	console.log(lexed);
+
 	Lisp.lex = lex;
 	let SPACER = "\u0000";
 	let SREGEX = new RegExp(SPACER,"g");
@@ -366,18 +497,27 @@ Lisp = (function(Lisp) {
 	function tokenize(input) {
 		return lex(input);
 	}
+	let lst = [];
+	lst.__nesting__ = "null";
+	console.log(JSON.stringify(newNest(lexed,lst,false),null,"  "));
 
-	function nest(tokens, lst) {
+	function newNest(tokens, lst, nested) {
+		if (nested!==false) {
+			nested = true;
+		}
 		// begin accumulating a list
 		if (lst===undefined) {
 			debug("building new list");
 			let sub = [];
-			sub.__nesting__ = null;
-			return nest(tokens,[]);
+			sub.__nesting__ = "null";
+			return newNest(tokens,sub);
 		} else {
 			let token = tokens.shift();
 			// finish reading input
-			if (token===undefined) {
+			if (token===undefined ) {
+				if (nested===true) {
+					return lst;
+				}
 				//this returns only the last list, so you have to use progn
 				// eventually want to wrap with an implicit progn
 				//return lst.pop();
@@ -391,15 +531,14 @@ Lisp = (function(Lisp) {
 			} else if (["(","[","{"].indexOf(token)!==-1) {
 				let sub = [];
 				sub.__nesting__ = token;
-				lst.push(nest(tokens,sub));
-				return nest(tokens, lst);
+				lst.push(newNest(tokens, sub));
+				return newNest(tokens, lst);
 			// function begins new list of arguments
-			} else if (token.substr(-1)==="(") {
-				let sub = [token(substr(0,-1))];
+			} else if (token.substring(token.length-1)==="(") {
+				let sub = [token.substring(0,token.length-1)];
 				sub.__nesting__ = "f(";
-				lst.push(nest(tokens,sub));
-				return nest(tokens, lst);
-				return nest(tokens, lst);
+				lst.push(newNest(tokens, sub));
+				return newNest(tokens, lst);
 			} else if (token===",") {
 				if (["(","[","f("].indexOf(lst.__nesting__)!==-1) {
 					// the first comma in each list
@@ -411,8 +550,8 @@ Lisp = (function(Lisp) {
 					lst.push(prev)
 					let sub = [];
 					sub.__nesting__ = ",";
-					lst.push(nest(tokens, sub));
-					return nest(tokens, lst);
+					lst.push(newNest(tokens, sub));
+					return newNest(tokens, lst);
 				} else if (lst.__nesting__===",") {
 					// check for infix?
 					return lst;
@@ -423,8 +562,8 @@ Lisp = (function(Lisp) {
 			} else if (token==="\n" || token===";") {
 				if (["(", "[","f("].indexOf(lst.__nesting__)!==-1) {
 					// treat as white space
-					return nest(tokens, lst);
-				} else if ([null,"{"].indexOf(lst.__nesting__)!==-1) {
+					return newNest(tokens, lst);
+				} else if (["null","{"].indexOf(lst.__nesting__)!==-1) {
 					//
 					let prev = [];
 					prev.__nesting__ = ";";
@@ -434,11 +573,11 @@ Lisp = (function(Lisp) {
 					lst.push(prev);
 					let sub = [];
 					sub.__nesting__ = ";";
-					lst.push(nest(tokens, sub));
-					return nest(tokens, lst);
+					lst.push(newNest(tokens, sub));
+					return newNest(tokens, lst);
 				} else if (lst.__nesting__===";") {
 					// check for infix?
-					return lst;
+					return newNest(tokens,lst);
 				}
 			} else if ([")","]","}"].indexOf(token)!==-1) {
 				// assume it is closed correctly for now?
@@ -449,7 +588,9 @@ Lisp = (function(Lisp) {
 					// only within , or ;?
 				//	lst.__infixed__ = true;
 				//}
-				return nest(tokens,lst.concat(atomize(token)));
+				let conc = lst.concat(atomize(token));
+				conc.__nesting__ = lst.__nesting__;
+				return newNest(tokens, conc);
 			}
 		}
 	}
